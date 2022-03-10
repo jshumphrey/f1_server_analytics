@@ -14,4 +14,6 @@ You'll need these Python modules installed. On Linux, some or all of these might
 
 ## Running the program
 
+You will first need to set up a `.env` file at the root folder; this file provides the authentication token with which the bot user accesses the server. There is a `.env_sample` file included in this repository, which provides instructions for what needs to be modified to get a working file set up.
+
 Run `python f1_server_analytics.py` from the command line.
