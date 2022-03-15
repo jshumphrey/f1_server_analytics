@@ -17,7 +17,8 @@ MAX_FAILURES = 5
 
 F1_GUILD_ID = "177387572505346048"
 ANNOUNCEMENTS_CHANNEL_ID = "361137849736626177"
-REACTED_MESSAGE_ID = "935642010419879957"
+
+MOD_APPLICATION_MESSAGE_ID = "935642010419879957"
 
 class Connection:
     '''This class wraps a requests Session, wraps the process of making a request via the
@@ -148,31 +149,36 @@ class Connection:
             else:
                 raise ex
 
+def export_reaction_users(connection, channel_id, message_id, emoji_text):
+    '''This exports a CSV of data about users that reacted to a particular message
+    with a particular emoji. Users that are no longer in the server are ignored.'''
+    guild = connection.get_guild(F1_GUILD_ID)
+    guild_roles = connection.get_roles(F1_GUILD_ID)
+    message = connection.get_message(channel_id, message_id)
+    emoji = [emoji for emoji in message["reactions"] if emoji["emoji"]["name"] == emoji_text][0]["emoji"]
+    users = connection.get_reaction_users(channel_id, message_id, emoji["name"], emoji["id"])
+
+    with open("reacted_users.csv", "w") as outfile:
+        writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
+        writer.writerow(["User ID", "User Name", "Display Name", "Join Date", "Highest FX Role", "Has NoXP?", "Is Banished?"])
+
+        for user in tqdm(users, desc = "Retrieving member data for users"):
+            member = connection.get_guild_member(guild["id"], user["id"])
+            if member:
+                member_roles = [gr["name"] for gr in guild_roles if gr["id"] in member["roles"]]
+                writer.writerow([
+                    member["user"]["id"],
+                    member["user"]["username"] + "#" + member["user"]["discriminator"],
+                    member["nick"] if member["nick"] else member["user"]["username"],
+                    member["joined_at"][:10],
+                    min([role for role in member_roles if role in ["F1", "F2", "F3", "F4", "Fan"]]),
+                    any([role == "NoXP" for role in member_roles]),
+                    any([role.upper().startswith("BANISHED") for role in member_roles])
+                ])
+
 def main():
     '''Execute top-level functionality.'''
     with Connection(TOKEN) as c:
-        guild = c.get_guild(F1_GUILD_ID)
-        guild_roles = c.get_roles(F1_GUILD_ID)
-        message = c.get_message(ANNOUNCEMENTS_CHANNEL_ID, REACTED_MESSAGE_ID)
-        emoji = [emoji for emoji in message["reactions"] if emoji["emoji"]["name"] == "Bonk"][0]["emoji"]
-        users = c.get_reaction_users(ANNOUNCEMENTS_CHANNEL_ID, REACTED_MESSAGE_ID, emoji["name"], emoji["id"])
-
-        with open("reacted_users.csv", "w") as outfile:
-            writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
-            writer.writerow(["User ID", "User Name", "Display Name", "Join Date", "Highest FX Role", "Has NoXP?", "Is Banished?"])
-
-            for user in tqdm(users, desc = "Retrieving member data for users"):
-                member = c.get_guild_member(guild["id"], user["id"])
-                if member:
-                    member_roles = [gr["name"] for gr in guild_roles if gr["id"] in member["roles"]]
-                    writer.writerow([
-                        member["user"]["id"],
-                        member["user"]["username"] + "#" + member["user"]["discriminator"],
-                        member["nick"] if member["nick"] else member["user"]["username"],
-                        member["joined_at"][:10],
-                        min([role for role in member_roles if role in ["F1", "F2", "F3", "F4", "Fan"]]),
-                        any([role == "NoXP" for role in member_roles]),
-                        any([role.upper().startswith("BANISHED") for role in member_roles])
-                    ])
+        export_reaction_users(c, ANNOUNCEMENTS_CHANNEL_ID, MOD_APPLICATION_MESSAGE_ID, "Bonk")
 
 main()
