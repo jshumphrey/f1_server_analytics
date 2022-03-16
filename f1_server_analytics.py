@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 '''This is a standalone script to dump out information about the F1 Discord server and its users.'''
 
-import csv, dotenv, logging, os, requests, time # pylint: disable = unused-import
+import csv, datetime, dotenv, logging, os, requests, time # pylint: disable = unused-import
 from tqdm import tqdm # pylint: disable = unused-import
 
 # Configure the logger so that we have a logger object to use.
@@ -11,12 +11,17 @@ logger = logging.getLogger("f1discord")
 dotenv.load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
+DISCORD_EPOCH = 1420070400000
+
 URL_BASE = "https://discord.com/api/v9"
 BASE_SLEEP_DELAY = 1.0 # This is the number of seconds to sleep between requests.
 MAX_FAILURES = 5
 
+SHADOW_USER_ID = "480338490639384576"
 F1_GUILD_ID = "177387572505346048"
 ANNOUNCEMENTS_CHANNEL_ID = "361137849736626177"
+LOGS_CHANNEL_ID = "273927887034515457"
+F1_LOGS_CHANNEL_ID = "447397947261452288"
 
 MOD_APPLICATION_MESSAGE_ID = "935642010419879957"
 
@@ -111,6 +116,43 @@ class Connection:
         '''This returns the JSON for the Channel with the provided Channel ID.'''
         return self.request_json("GET", f"/channels/{channel_id}")
 
+    def get_channel_messages(self, channel_id, before = None, after = None, limit = 15000):
+        '''This yields the JSON of messages sent in the channel with the provided Channel ID,
+        up to the number of messages in the "limit" argument.
+
+        If the "before" or "after" arguments are provided (or both), only the messages before
+        or after (or between) the provided Message ID(s) will be retrieved. If neither argument
+        is provided, the most recent messages sent in the channel will be retrieved.'''
+        messages = []
+        channel = self.get_channel(channel_id)
+
+        if after and before and after > before:
+            raise ValueError("'after' cannot be greater than 'before'")
+
+        direction_param = "after" if after else "before"
+        default_message_id = after or before or generate_fake_message_id(datetime.datetime.now()) # Equivalent to SQL COALESCE()
+
+        with tqdm(desc = f"Retrieving messages in #{channel['name']}", total = limit) as pbar:
+            while True:
+                response_messages = self.request_json(
+                    request_type = "GET",
+                    suburl = f"/channels/{channel_id}/messages",
+                    params = {"limit": 100, direction_param: messages[-1]["id"] if messages else default_message_id}
+                )
+                if not response_messages:
+                    return messages # We're completely out of messages; return the list
+
+                response_messages.sort(key = lambda m: m["id"], reverse = direction_param == "before")
+                for message in response_messages:
+                    if after and before and message["id"] > before:
+                        return messages # We've hit the end of our search range; return the list
+
+                    messages.append(message)
+                    pbar.update()
+
+                    if len(messages) >= limit:
+                        return messages # We've hit our limit of messages to pull; return the list
+
     def get_message(self, channel_id, message_id):
         '''This returns the JSON for the Message with the provided Message ID.'''
         return self.request_json("GET", f"/channels/{channel_id}/messages/{message_id}")
@@ -149,6 +191,25 @@ class Connection:
             else:
                 raise ex
 
+def generate_fake_message_id(dt):
+    '''This translates a Python datetime.datetime object into a FAKE Discord Message ID.
+    This Message ID is one that would have been sent at the datetime provided.
+
+    Discord Message IDs are 64-bit integers. When you translate them into binary,
+    the first 42 bits are the number of milliseconds since 2015-01-01T00:00:00.
+    The remaining 22 bits are internal stuff that you don't care about.
+
+    What this means is that if you have a datetime, you can generate a Message ID
+    for a _fake_ message that was sent at that time. To do this, get the number
+    of milliseconds since the Discord Epoch (just get the Unix time and subtract
+    the DE), then left-shift it by 22 bits. This left-shift fills the last 22 bits
+    with zeroes, which are the bits you don't care about. Converting this back to
+    an integer gives you a Discord Message ID.
+
+    Again, this Message ID is _not_ the ID of any _real_ message, but you _can_ use it
+    as a point of reference to be able to jump to a point in time of a channel's message history.'''
+    return str(int((dt.timestamp() * 1000) - DISCORD_EPOCH) << 22)
+
 def export_reaction_users(connection, channel_id, message_id, emoji_text):
     '''This exports a CSV of data about users that reacted to a particular message
     with a particular emoji. Users that are no longer in the server are ignored.'''
@@ -176,9 +237,37 @@ def export_reaction_users(connection, channel_id, message_id, emoji_text):
                     any([role.upper().startswith("BANISHED") for role in member_roles])
                 ])
 
+def get_joins_leaves(connection, since_datetime):
+    '''This is a subroutine that gets all of the messages sent by Shadow
+    in the #logs channel when users join or leave the server.'''
+    messages = connection.get_channel_messages(
+        LOGS_CHANNEL_ID,
+        after = generate_fake_message_id(since_datetime)
+    )
+    return [
+        message for message in messages
+        if message["author"]["id"] == SHADOW_USER_ID
+        and "Message Edit" not in message["embeds"][0]["fields"][0]["value"]
+        and "Message Deletion" not in message["embeds"][0]["fields"][0]["value"]
+    ]
+
+def export_bouncing_users(connection, since_datetime):
+    '''This exports a CSV of data about users that "bounced" from the server:
+    users that join and then quickly leave the server.'''
+    joins_leaves = get_joins_leaves(connection, since_datetime)
+
+    user_events = {} # {user_id: {"join_datetime": YYYY-MM-DD HH:MM:SS, "leave_datetime": YYYY-MM-DD HH:MM:SS}}
+    for message in joins_leaves:
+        user_id = message["embeds"][0]["footer"]["text"].replace("User ID: ", "")
+        event_type = "joined_at" if message["embeds"][0]["fields"][0]["value"] == "Joined the server" else "left_at"
+        user_events[user_id][event_type] = message["timestamp"][:19].replace("T" " ")
+
+    breakpoint()
+
 def main():
     '''Execute top-level functionality.'''
     with Connection(TOKEN) as c:
-        export_reaction_users(c, ANNOUNCEMENTS_CHANNEL_ID, MOD_APPLICATION_MESSAGE_ID, "Bonk")
+        #export_reaction_users(c, ANNOUNCEMENTS_CHANNEL_ID, MOD_APPLICATION_MESSAGE_ID, "Bonk")
+        export_bouncing_users(c, datetime.datetime.today() - datetime.timedelta(weeks = 2))
 
 main()
