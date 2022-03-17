@@ -14,7 +14,7 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 DISCORD_EPOCH = 1420070400000
 
 URL_BASE = "https://discord.com/api/v9"
-BASE_SLEEP_DELAY = 0.75 # This is the number of seconds to sleep between requests.
+BASE_SLEEP_DELAY = 0.5 # This is the number of seconds to sleep between requests.
 MAX_FAILURES = 5
 
 F1_GUILD_ID = "177387572505346048"
@@ -42,6 +42,7 @@ class Connection:
         }
 
         self.last_call = time.time()
+        self.sleep_delay = BASE_SLEEP_DELAY
         self.test_token()
 
     def __enter__(self):
@@ -67,7 +68,7 @@ class Connection:
         so we might still hit the limiter (which is handled separately), but by baking
         in a basic delay between requests, we get a more stable average request time.'''
         time_since_last_call = round(time.time() - self.last_call, 4)
-        time_to_sleep = max(BASE_SLEEP_DELAY - time_since_last_call, 0)
+        time_to_sleep = max(self.sleep_delay - time_since_last_call, 0)
         if time_to_sleep > 0:
             logger.debug(f"It's only been {time_since_last_call!s} seconds since the last call, sleeping for {time_to_sleep!s}s")
             time.sleep(time_to_sleep)
@@ -90,6 +91,7 @@ class Connection:
                 if ex.response.status_code == 429:
                     time_to_sleep = ex.response.json()["retry_after"]
                     logger.info(f"Hit the Discord rate limiter; sleeping for {time_to_sleep!s} seconds")
+                    self.sleep_delay += 0.05 # If we hit the rate limiter, back off the request speed bit by bit.
                     time.sleep(time_to_sleep)
                 else:
                     raise ex
@@ -359,7 +361,7 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None):
 
     with open("bouncing_users.csv", "w") as outfile:
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
-        writer.writerow(["User ID", "User Name", "Display Name", "Join Date", "Leave Date", "Had Fan Role?", "Was Banned?"])
+        writer.writerow(["User ID", "User Name", "Join Date", "Leave Date", "Had Fan Role?", "Was Banned?"])
 
         for user_id, events in tqdm(user_events.items(), desc = "Retrieving user data"):
             user = connection.get_user(user_id)
