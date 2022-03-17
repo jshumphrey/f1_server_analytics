@@ -361,17 +361,29 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None):
 
     with open("bouncing_users.csv", "w") as outfile:
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
-        writer.writerow(["User ID", "User Name", "Join Date", "Leave Date", "Had Fan Role?", "Was Banned?"])
+        writer.writerow(["User ID", "User Name", "Join Date", "Leave Date", "Duration", "Had Fan Role?", "Was Banned?", "Status"])
 
         for user_id, events in tqdm(user_events.items(), desc = "Retrieving user data"):
+            if events["join_dt"] > events["leave_dt"]:
+                continue # These are basically bugged because the user left before the time window. Throw them out.
+
             user = connection.get_user(user_id)
+            if events["is_banned"]:
+                status = "Banned"
+            elif events["leave_dt"]:
+                status = "Joined and Left"
+            else:
+                status = "Joined"
+
             writer.writerow([
                 user_id,
                 user["username"] + "#" + user["discriminator"],
                 events["join_dt"].strftime("%Y-%m-%d %H:%M:%S") if events["join_dt"] else "Not Found",
                 events["leave_dt"].strftime("%Y-%m-%d %H:%M:%S") if events["leave_dt"] else "Not Found",
+                str(events["leave_dt"] - events["join_dt"]) if status == "Joined and Left" else None,
                 "Yes" if events["had_fan"] is True else "No",
-                "Yes" if events["is_banned"] is True else "No"
+                "Yes" if events["is_banned"] is True else "No",
+                status
             ])
 
 def main():
