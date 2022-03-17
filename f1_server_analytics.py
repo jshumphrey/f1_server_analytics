@@ -364,23 +364,25 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None):
         writer.writerow(["User ID", "User Name", "Join Date", "Leave Date", "Duration", "Had Fan Role?", "Was Banned?", "Status"])
 
         for user_id, events in tqdm(user_events.items(), desc = "Retrieving user data"):
+            if not events["join_dt"]:
+                continue # Skip anyone that didn't join in the window we're looking at.
             if events["join_dt"] > events["leave_dt"]:
-                continue # These are basically bugged because the user left before the time window. Throw them out.
+                continue # These are basically bugged because the user left before the time window. Skip them.
 
             user = connection.get_user(user_id)
             if events["is_banned"]:
                 status = "Banned"
             elif events["leave_dt"]:
-                status = "Joined + Left"
+                status = "Joined and Left"
             else:
-                status = "Joined"
+                status = "Joined and Stayed"
 
             writer.writerow([
                 user_id,
                 user["username"] + "#" + user["discriminator"],
-                events["join_dt"].strftime("%Y-%m-%d %H:%M:%S") if events["join_dt"] else "Not Found",
+                events["join_dt"].strftime("%Y-%m-%d %H:%M:%S"),
                 events["leave_dt"].strftime("%Y-%m-%d %H:%M:%S") if events["leave_dt"] else "Not Found",
-                str(events["leave_dt"] - events["join_dt"]) if status == "Joined + Left" else None,
+                str(events["leave_dt"] - events["join_dt"]) if events["leave_dt"] else None,
                 "Yes" if events["had_fan"] is True else "No",
                 "Yes" if events["is_banned"] is True else "No",
                 status
