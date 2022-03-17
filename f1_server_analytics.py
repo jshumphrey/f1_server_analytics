@@ -371,7 +371,7 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None):
             if events["is_banned"]:
                 status = "Banned"
             elif events["leave_dt"]:
-                status = "Joined and Left"
+                status = "Joined + Left"
             else:
                 status = "Joined"
 
@@ -380,7 +380,7 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None):
                 user["username"] + "#" + user["discriminator"],
                 events["join_dt"].strftime("%Y-%m-%d %H:%M:%S") if events["join_dt"] else "Not Found",
                 events["leave_dt"].strftime("%Y-%m-%d %H:%M:%S") if events["leave_dt"] else "Not Found",
-                str(events["leave_dt"] - events["join_dt"]) if status == "Joined and Left" else None,
+                str(events["leave_dt"] - events["join_dt"]) if status == "Joined + Left" else None,
                 "Yes" if events["had_fan"] is True else "No",
                 "Yes" if events["is_banned"] is True else "No",
                 status
