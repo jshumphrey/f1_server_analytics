@@ -338,27 +338,24 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None):
     fan_role_grants = get_fan_role_grants(connection, after_dt = after_dt, before_dt = before_dt)
 
     user_events = {} # {user_id: {"join_dt": datetime, "leave_dt": datetime, "is_banned": bool, "had_fan": bool}}
-    default_entry = {"join_dt": None, "leave_dt": None, "is_banned": None, "had_fan": None}
     for message in joins_leaves:
         user_id = message["embeds"][0]["footer"]["text"].replace("User ID: ", "")
         event_type = "join_dt" if message["embeds"][0]["fields"][0]["value"] == "Joined the server" else "leave_dt"
         if user_id not in user_events:
-            user_events[user_id] = default_entry
+            user_events[user_id] = {"join_dt": None, "leave_dt": None, "is_banned": None, "had_fan": None}
         user_events[user_id][event_type] = datetime.datetime.fromisoformat(message["timestamp"])
 
     for message in bans:
         user_id = re.search(r"\*\*User:\*\*.*\(([0-9]+)\)", message["embeds"][0]["description"]).group(1)
         if user_id not in user_events:
-            user_events[user_id] = default_entry
+            user_events[user_id] = {"join_dt": None, "leave_dt": None, "is_banned": None, "had_fan": None}
         user_events[user_id]["is_banned"] = True
 
     for entry in fan_role_grants:
         user_id = entry["target_id"]
         if user_id not in user_events:
-            user_events[user_id] = default_entry
+            user_events[user_id] = {"join_dt": None, "leave_dt": None, "is_banned": None, "had_fan": None}
         user_events[user_id]["had_fan"] = True
-
-    breakpoint()
 
     with open("bouncing_users.csv", "w") as outfile:
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
@@ -369,8 +366,8 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None):
             writer.writerow([
                 user_id,
                 user["username"] + "#" + user["discriminator"],
-                events["join_dt"].strftime("%Y-%m-%d %H-%M-%S") if events["join_dt"] else "Not Found",
-                events["leave_dt"].strftime("%Y-%m-%d %H-%M-%S") if events["leave_dt"] else "Not Found",
+                events["join_dt"].strftime("%Y-%m-%d %H:%M:%S") if events["join_dt"] else "Not Found",
+                events["leave_dt"].strftime("%Y-%m-%d %H:%M:%S") if events["leave_dt"] else "Not Found",
                 "Yes" if events["had_fan"] is True else "No",
                 "Yes" if events["is_banned"] is True else "No"
             ])
