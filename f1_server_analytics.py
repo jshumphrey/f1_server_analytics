@@ -18,16 +18,22 @@ BASE_SLEEP_DELAY = 0.5 # This is the number of seconds to sleep between requests
 MAX_FAILURES = 5
 
 F1_GUILD_ID = "177387572505346048"
+
+FAN_ROLE_ID = "328635502792278017"
+MOD_ROLE_IDS = ["177408413381165056", "177408501268611073", "293845938764644352", "738665034359767060"]
+
 ANNOUNCEMENTS_CHANNEL_ID = "361137849736626177"
 LOGS_CHANNEL_ID = "273927887034515457"
 F1_LOGS_CHANNEL_ID = "447397947261452288"
 
 SHADOW_USER_ID = "480338490639384576"
 FORMULA_ONE_USER_ID = "424900962449358848"
-
-MEMBER_ROLE_UPDATE_ACTION_TYPE = 25
+LUX_USER_ID = "145582654857805825"
 
 MOD_APPLICATION_MESSAGE_ID = "935642010419879957"
+
+MEMBER_UPDATE_ACTION_TYPE = 24
+MEMBER_ROLE_UPDATE_ACTION_TYPE = 25
 
 class Connection:
     '''This class wraps a requests Session, wraps the process of making a request via the
@@ -113,6 +119,10 @@ class Connection:
     def get_guild(self, guild_id):
         '''This returns the JSON for the Guild with the provided Guild ID.'''
         return self.request_json("GET", f"/guilds/{guild_id}")
+
+    def get_guild_preview(self, guild_id):
+        '''This returns the JSON for the Guild Preview with the provided Guild ID.'''
+        return self.request_json("GET", f"/guilds/{guild_id}/preview")
 
     def get_roles(self, guild_id):
         '''This returns the JSON of the Roles for the Guild with the provided Guild ID.'''
@@ -249,6 +259,25 @@ class Connection:
             else:
                 raise ex
 
+    def get_all_guild_members(self, guild_id):
+        '''This returns a list with the JSON of all members of the guild with the provided Guild ID.'''
+        members = []
+        num_members = self.get_guild_preview(guild_id)["approximate_member_count"]
+
+        with tqdm(desc = "Retrieving all guild members", total = num_members) as pbar:
+            while True:
+                response_members = self.request_json(
+                    request_type = "GET",
+                    suburl = f"/guilds/{guild_id}/members",
+                    params = {"limit": 1000} | ({"after": members[-1]["user"]["id"]} if members else {})
+                )
+                if not response_members:
+                    return members # We're completely out of members; return the list
+
+                response_members.sort(key = lambda m: m["user"]["id"])
+                members += response_members
+                pbar.update(len(response_members))
+
 def generate_snowflake(dt):
     '''This translates a Python datetime.datetime object into a FAKE Discord Message ID.
     This Message ID is one that would have been sent at the datetime provided.
@@ -361,7 +390,7 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None):
 
     with open("bouncing_users.csv", "w") as outfile:
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
-        writer.writerow(["User ID", "User Name", "Join Date", "Leave Date", "Duration", "Had Fan Role?", "Was Banned?", "Status"])
+        writer.writerow(["User ID", "User Name", "Join Date", "Leave Date", "Duration", "Had Fan Role?", "Verified Email?", "Was Banned?", "Status"])
 
         for user_id, events in tqdm(user_events.items(), desc = "Retrieving user data"):
             if not events["join_dt"]:
@@ -388,10 +417,38 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None):
                 status
             ])
 
+def export_fan_eligible_users(connection):
+    '''This exports a CSV of data about users that are eligible to receive the Fan role,
+    but have not yet been granted it.'''
+    members = connection.get_all_guild_members(F1_GUILD_ID)
+    eligible_members = [
+        member for member in members
+        if not member["pending"]
+        and FAN_ROLE_ID not in member["roles"]
+        and not list(set(member["roles"]) & set(MOD_ROLE_IDS)) # If there's no intersection
+        and not ("bot" in member["user"] and member["user"]["bot"])
+    ]
+
+    with open("fan_eligible_users.csv", "w") as outfile:
+        writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
+        writer.writerow(["User ID", "User Name", "Display Name", "Join Date", "Roles"])
+
+        for member in sorted(eligible_members, key = lambda m: m["joined_at"]):
+            writer.writerow([
+                member["user"]["id"],
+                member["user"]["username"] + "#" + member["user"]["discriminator"],
+                member["nick"] if member["nick"] else member["user"]["username"],
+                member["joined_at"][:10],
+
+            ])
+
 def main():
     '''Execute top-level functionality.'''
+    # pylint: disable = unused-variable
     with Connection(TOKEN) as c:
         #export_reaction_users(c, ANNOUNCEMENTS_CHANNEL_ID, MOD_APPLICATION_MESSAGE_ID, "Bonk")
-        export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2))
+        #export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2))
+        export_fan_eligible_users(c)
+        breakpoint()
 
 main()
