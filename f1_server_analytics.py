@@ -297,6 +297,11 @@ def generate_snowflake(dt):
     as a point of reference to be able to jump to a point in time of a channel's message history.'''
     return str(int((dt.timestamp() * 1000) - DISCORD_EPOCH) << 22)
 
+def generate_datetime(snowflake):
+    '''This parses the creation datetime from a Discord [whatever] ID.
+    This essentially does the reverse of generate_snowflake().'''
+    return datetime.datetime.fromtimestamp(((int(snowflake) >> 22) + DISCORD_EPOCH) / 1000)
+
 def export_reaction_users(connection, channel_id, message_id, emoji_text):
     '''This exports a CSV of data about users that reacted to a particular message
     with a particular emoji. Users that are no longer in the server are ignored.'''
@@ -325,102 +330,99 @@ def export_reaction_users(connection, channel_id, message_id, emoji_text):
                 ])
 
 def get_joins_leaves(connection, after_dt = None, before_dt = None):
-    '''This is a subroutine that gets all of the messages sent by Shadow
-    in the #logs channel when users join or leave the server.'''
+    '''This is a subroutine that gets all of the messages sent by Shadow in the #logs
+    channel when users join or leave the server. This returns a tuple containing two dicts
+    of {user_id: join/leave message} - one dict for joins, one for leaves.'''
     messages = connection.get_channel_messages(LOGS_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt)
-    return [
-        message for message in messages
+    joins = {
+        message["embeds"][0]["footer"]["text"].replace("User ID: ", ""): message
+        for message in messages
         if message["author"]["id"] == SHADOW_USER_ID
-        and "Message Edit" not in message["embeds"][0]["fields"][0]["value"]
-        and "Message Deletion" not in message["embeds"][0]["fields"][0]["value"]
-    ]
+        and message["embeds"][0]["fields"][0]["value"] == "Joined the server"
+    }
+    leaves = {
+        message["embeds"][0]["footer"]["text"].replace("User ID: ", ""): message
+        for message in messages
+        if message["author"]["id"] == SHADOW_USER_ID
+        and message["embeds"][0]["fields"][0]["value"] == "Left the server"
+    }
+    return (joins, leaves)
 
 def get_bans(connection, after_dt = None, before_dt = None):
-    '''This is a subroutine that gets all of the messages sent by Formula One
-    in the #f1-logs channel when a user is banned.'''
+    '''This is a subroutine that gets all of the messages sent by Formula One in the #f1-logs
+    channel when a user is banned. This returns a dict of {user_id: ban message}.'''
     messages = connection.get_channel_messages(F1_LOGS_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt)
-    return [
-        message for message in messages
+    return {
+        re.search(r"\*\*User:\*\*.*\(([0-9]+)\)", message["embeds"][0]["description"]).group(1): message
+        for message in messages
         if message["author"]["id"] == FORMULA_ONE_USER_ID
         and "description" in message["embeds"][0]
         and "**Action:** Ban" in message["embeds"][0]["description"]
-    ]
+    }
 
 def get_fan_role_grants(connection, after_dt = None, before_dt = None):
-    '''This is a subroutine that gets all of the times when a user was
-    granted the Fan role by the Formula One bot.'''
+    '''This is a subroutine that gets all of the times when a user was granted the Fan role
+    by the Formula One bot. This returns a dict of {user_id: audit log entry}.'''
     entries = connection.get_audit_log_entries(
         user_id = FORMULA_ONE_USER_ID,
         action_type = MEMBER_ROLE_UPDATE_ACTION_TYPE,
         before_dt = before_dt,
         after_dt = after_dt
     )
-    return [
-        entry for entry in entries
+    return {
+        entry["target_id"]: entry
+        for entry in entries
         if entry["changes"][0]["key"] == "$add"
         and entry["changes"][0]["new_value"][0]["name"] == "Fan"
-    ]
+    }
 
 def export_bouncing_users(connection, after_dt = None, before_dt = None):
     '''This exports a CSV of data about users that "bounced" from the server:
     users that join and then quickly leave the server.'''
-    joins_leaves = get_joins_leaves(connection, after_dt = after_dt, before_dt = before_dt)
+    (joins, leaves) = get_joins_leaves(connection, after_dt = after_dt, before_dt = before_dt)
     bans = get_bans(connection, after_dt = after_dt, before_dt = before_dt)
     fan_role_grants = get_fan_role_grants(connection, after_dt = after_dt, before_dt = before_dt)
+    members = {member["user"]["id"]: member for member in connection.get_all_guild_members(F1_GUILD_ID)}
 
-    user_events = {} # {user_id: {"join_dt": datetime, "leave_dt": datetime, "is_banned": bool, "had_fan": bool}}
-    for message in joins_leaves:
-        user_id = message["embeds"][0]["footer"]["text"].replace("User ID: ", "")
-        event_type = "join_dt" if message["embeds"][0]["fields"][0]["value"] == "Joined the server" else "leave_dt"
-        if user_id not in user_events:
-            user_events[user_id] = {"join_dt": None, "leave_dt": None, "is_banned": None, "had_fan": None}
-        user_events[user_id][event_type] = datetime.datetime.fromisoformat(message["timestamp"])
-
-    for message in bans:
-        user_id = re.search(r"\*\*User:\*\*.*\(([0-9]+)\)", message["embeds"][0]["description"]).group(1)
-        if user_id not in user_events:
-            user_events[user_id] = {"join_dt": None, "leave_dt": None, "is_banned": None, "had_fan": None}
-        user_events[user_id]["is_banned"] = True
-
-    for entry in fan_role_grants:
-        user_id = entry["target_id"]
-        if user_id not in user_events:
-            user_events[user_id] = {"join_dt": None, "leave_dt": None, "is_banned": None, "had_fan": None}
-        user_events[user_id]["had_fan"] = True
+    user_events = {
+        user_id: {
+            "join_dt": datetime.datetime.fromisoformat(joins[user_id]["timestamp"]),
+            "leave_dt": datetime.datetime.fromisoformat(leaves[user_id]["timestamp"]) if user_id in leaves else None,
+            "is_banned": True if user_id in bans else None,
+            "had_fan": True if user_id in fan_role_grants else None
+        }
+        for user_id in joins.keys()
+    }
 
     with open("bouncing_users.csv", "w") as outfile:
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
-        writer.writerow(["User ID", "User Name", "Join Date", "Leave Date", "Duration", "Had Fan Role?", "Verified Email?", "Was Banned?", "Status"])
+        writer.writerow(["User ID", "User Name", "User Create TS", "Join TS", ">5min Account Age?", "Leave TS", "Duration", "Verified Email?", "Fan Role?", "Banned?", "Status"])
 
         for user_id, events in tqdm(user_events.items(), desc = "Retrieving user data"):
-            if not events["join_dt"]:
-                continue # Skip anyone that didn't join in the window we're looking at.
             if events["join_dt"] > events["leave_dt"]:
                 continue # These are basically bugged because the user left before the time window. Skip them.
 
-            user = connection.get_user(user_id)
-            if events["is_banned"]:
-                status = "Banned"
-            elif events["leave_dt"]:
-                status = "Joined and Left"
-            else:
-                status = "Joined and Stayed"
+            user = members[user_id]["user"] if user_id in members else connection.get_user(user_id)
 
             writer.writerow([
                 user_id,
                 user["username"] + "#" + user["discriminator"],
+                generate_datetime(user_id).strftime("%Y-%m-%d %H:%M:%S"),
                 events["join_dt"].strftime("%Y-%m-%d %H:%M:%S"),
+                "Yes" if events["join_dt"] >= generate_datetime(user_id) + datetime.timedelta(minutes = 5) else "No",
                 events["leave_dt"].strftime("%Y-%m-%d %H:%M:%S") if events["leave_dt"] else "Not Found",
                 str(events["leave_dt"] - events["join_dt"]) if events["leave_dt"] else None,
+                "Unknown" if user_id not in members else ("No" if members[user_id]["pending"] else "Yes"),
                 "Yes" if events["had_fan"] is True else "No",
                 "Yes" if events["is_banned"] is True else "No",
-                status
+                "Banned" if events["is_banned"] else "Joined and " + ("Left" if events["leave_dt"] else "Stayed")
             ])
 
 def export_fan_eligible_users(connection):
     '''This exports a CSV of data about users that are eligible to receive the Fan role,
     but have not yet been granted it.'''
     members = connection.get_all_guild_members(F1_GUILD_ID)
+    guild_roles = connection.get_roles(F1_GUILD_ID)
     eligible_members = [
         member for member in members
         if not member["pending"]
@@ -439,7 +441,7 @@ def export_fan_eligible_users(connection):
                 member["user"]["username"] + "#" + member["user"]["discriminator"],
                 member["nick"] if member["nick"] else member["user"]["username"],
                 member["joined_at"][:10],
-
+                ", ".join([gr["name"] for gr in guild_roles if gr["id"] in member["roles"]])
             ])
 
 def main():
@@ -448,7 +450,7 @@ def main():
     with Connection(TOKEN) as c:
         #export_reaction_users(c, ANNOUNCEMENTS_CHANNEL_ID, MOD_APPLICATION_MESSAGE_ID, "Bonk")
         #export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2))
-        export_fan_eligible_users(c)
+        #export_fan_eligible_users(c)
         breakpoint()
 
 main()
