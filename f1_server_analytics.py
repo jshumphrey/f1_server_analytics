@@ -96,7 +96,7 @@ class Connection:
             except requests.HTTPError as ex:
                 if ex.response.status_code == 429:
                     time_to_sleep = ex.response.json()["retry_after"]
-                    logger.info(f"Hit the Discord rate limiter; sleeping for {time_to_sleep!s} seconds")
+                    logger.debug(f"Hit the Discord rate limiter; sleeping for {time_to_sleep!s} seconds")
                     self.sleep_delay += 0.05 # If we hit the rate limiter, back off the request speed bit by bit.
                     time.sleep(time_to_sleep)
                 else:
@@ -300,7 +300,7 @@ def generate_snowflake(dt):
 def generate_datetime(snowflake):
     '''This parses the creation datetime from a Discord [whatever] ID.
     This essentially does the reverse of generate_snowflake().'''
-    return datetime.datetime.fromtimestamp(((int(snowflake) >> 22) + DISCORD_EPOCH) / 1000)
+    return datetime.datetime.fromtimestamp(((int(snowflake) >> 22) + DISCORD_EPOCH) / 1000, tz = datetime.timezone.utc)
 
 def export_reaction_users(connection, channel_id, message_id, emoji_text):
     '''This exports a CSV of data about users that reacted to a particular message
@@ -399,7 +399,7 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None):
         writer.writerow(["User ID", "User Name", "User Create TS", "Join TS", ">5min Account Age?", "Leave TS", "Duration", "Verified Email?", "Fan Role?", "Banned?", "Status"])
 
         for user_id, events in tqdm(user_events.items(), desc = "Retrieving user data"):
-            if events["join_dt"] > events["leave_dt"]:
+            if events["leave_dt"] and events["join_dt"] > events["leave_dt"]:
                 continue # These are basically bugged because the user left before the time window. Skip them.
 
             user = members[user_id]["user"] if user_id in members else connection.get_user(user_id)
@@ -449,8 +449,8 @@ def main():
     # pylint: disable = unused-variable
     with Connection(TOKEN) as c:
         #export_reaction_users(c, ANNOUNCEMENTS_CHANNEL_ID, MOD_APPLICATION_MESSAGE_ID, "Bonk")
-        #export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2))
+        export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2))
         #export_fan_eligible_users(c)
-        breakpoint()
+        #breakpoint()
 
 main()
