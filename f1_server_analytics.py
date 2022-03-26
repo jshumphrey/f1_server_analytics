@@ -23,6 +23,12 @@ FAN_ROLE_ID = "328635502792278017"
 MOD_ROLE_IDS = ["177408413381165056", "177408501268611073", "293845938764644352", "738665034359767060"]
 
 ANNOUNCEMENTS_CHANNEL_ID = "361137849736626177"
+F1_GENERAL_CHANNEL_ID = "876046265111167016"
+F1_DISCUSSION_CHANNEL_ID = "432208507073331201"
+F1_GRANDSTAND_CHANNEL_ID = "825702140118564905"
+PADDOCK_CLUB_CHANNEL_ID = "314949863911587840"
+OFFTRACK_CHANNEL_ID = "242392969213247500"
+SANDBOX_CHANNEL_ID = "242392574193565711"
 LOGS_CHANNEL_ID = "273927887034515457"
 F1_LOGS_CHANNEL_ID = "447397947261452288"
 
@@ -376,6 +382,11 @@ def get_fan_role_grants(connection, after_dt = None, before_dt = None):
         and entry["changes"][0]["new_value"][0]["name"] == "Fan"
     }
 
+def get_emoji_usage(connection, channel_id, after_dt = None, before_dt = None):
+    '''This returns a dictionary of emoji usage in the specified channel, in the specified time range.
+    The dictionary is: {channel_name: {emoji_text: {"messages": int, "reactions": int}}}'''
+    pass
+
 def export_bouncing_users(connection, after_dt = None, before_dt = None):
     '''This exports a CSV of data about users that "bounced" from the server:
     users that join and then quickly leave the server.'''
@@ -443,6 +454,11 @@ def export_fan_eligible_users(connection):
                 member["joined_at"][:10],
                 ", ".join([gr["name"] for gr in guild_roles if gr["id"] in member["roles"]])
             ])
+
+def export_emoji_usage(connection, after_dt = None, before_dt = None):
+    '''This exports a CSV of data about which emoji were used, in which channels,
+    and with what frequency, over the date range provided.'''
+    pass
 
 def main():
     '''Execute top-level functionality.'''
