@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 '''This is a standalone script to dump out information about the F1 Discord server and its users.'''
 
-import csv, datetime, dotenv, logging, os, re, requests, time # pylint: disable = unused-import
+import csv, datetime, dotenv, itertools, logging, os, re, requests, time # pylint: disable = unused-import
 from tqdm import tqdm
 
 # Configure the logger so that we have a logger object to use.
@@ -134,6 +134,10 @@ class Connection:
         '''This returns the JSON of the Roles for the Guild with the provided Guild ID.'''
         return self.request_json("GET", f"/guilds/{guild_id}/roles")
 
+    def get_all_emoji(self, guild_id):
+        '''This returns the JSON of all of the emoji for the Guild with the provided Guild ID.'''
+        return self.get_guild(guild_id)["emojis"]
+
     def get_channel(self, channel_id):
         '''This returns the JSON for the Channel with the provided Channel ID.'''
         return self.request_json("GET", f"/channels/{channel_id}")
@@ -174,7 +178,7 @@ class Connection:
                     messages.append(message)
                     pbar.update()
 
-                    if len(messages) >= limit:
+                    if limit and len(messages) >= limit:
                         return messages # We've hit our limit of messages to pull; return the list
 
     def get_message(self, channel_id, message_id):
@@ -382,10 +386,32 @@ def get_fan_role_grants(connection, after_dt = None, before_dt = None):
         and entry["changes"][0]["new_value"][0]["name"] == "Fan"
     }
 
-def get_emoji_usage(connection, channel_id, after_dt = None, before_dt = None):
+def get_channel_emoji_usage(connection, channel_id, after_dt = None, before_dt = None, limit = 15000):
     '''This returns a dictionary of emoji usage in the specified channel, in the specified time range.
     The dictionary is: {channel_name: {emoji_text: {"messages": int, "reactions": int}}}'''
-    pass
+    channel = connection.get_channel(channel_id)
+    output_emoji = {}
+
+    for message in connection.get_channel_messages(channel_id, after_dt = after_dt, before_dt = before_dt, limit = limit):
+        message_emoji = re.findall(r"<:(\w+):\d{18}>", message["content"])
+        reaction_emoji = [
+            reaction["emoji"]["name"]
+            for reaction in message["reactions"]
+            if reaction["emoji"]["id"]
+        ] if "reactions" in message else []
+
+        output_emoji = output_emoji | {
+            emoji: {"messages": 0, "reactions": 0}
+            for emoji in message_emoji + reaction_emoji
+            if emoji not in output_emoji
+        }
+
+        for emoji in message_emoji:
+            output_emoji[emoji]["messages"] += 1
+        for emoji in reaction_emoji:
+            output_emoji[emoji]["reactions"] += 1
+
+    return {channel["name"]: output_emoji}
 
 def export_bouncing_users(connection, after_dt = None, before_dt = None):
     '''This exports a CSV of data about users that "bounced" from the server:
@@ -455,18 +481,47 @@ def export_fan_eligible_users(connection):
                 ", ".join([gr["name"] for gr in guild_roles if gr["id"] in member["roles"]])
             ])
 
-def export_emoji_usage(connection, after_dt = None, before_dt = None):
+def export_emoji_usage(connection, after_dt = None, before_dt = None, limit = 15000):
     '''This exports a CSV of data about which emoji were used, in which channels,
     and with what frequency, over the date range provided.'''
-    pass
+    emoji_usage = {}
+    channels_to_scan = [
+        F1_GENERAL_CHANNEL_ID,
+        F1_DISCUSSION_CHANNEL_ID,
+        F1_GRANDSTAND_CHANNEL_ID,
+        PADDOCK_CLUB_CHANNEL_ID,
+        OFFTRACK_CHANNEL_ID,
+        SANDBOX_CHANNEL_ID
+    ]
+
+    for channel_id in channels_to_scan:
+        emoji_usage = emoji_usage | get_channel_emoji_usage(connection, channel_id, after_dt = after_dt, before_dt = before_dt, limit = limit)
+
+    guild_emoji = {emoji["name"]: emoji["id"] for emoji in connection.get_all_emoji(F1_GUILD_ID)}
+
+    with open("emoji_usage.csv", "w") as outfile:
+        writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
+        writer.writerow(["Emoji Name", "Channel", "Times Used in Messages", "Times Used as Reaction"])
+        for channel, usage_dict in emoji_usage.items():
+            for emoji, emoji_dict in usage_dict.items():
+                if emoji in guild_emoji:
+                    writer.writerow([emoji, channel, emoji_dict["messages"], emoji_dict["reactions"]])
+
+    all_used_emoji = list(itertools.chain.from_iterable([emojis.keys() for channel, emojis in emoji_usage.items()]))
+    unused_emoji = sorted([emoji for emoji in guild_emoji.keys() if emoji not in all_used_emoji])
+
+    with open("unused_emoji.csv", "w") as outfile:
+        outfile.write("\n".join(["Emoji Name"] + unused_emoji))
 
 def main():
     '''Execute top-level functionality.'''
     # pylint: disable = unused-variable
     with Connection(TOKEN) as c:
         #export_reaction_users(c, ANNOUNCEMENTS_CHANNEL_ID, MOD_APPLICATION_MESSAGE_ID, "Bonk")
-        export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2))
+        #export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2))
         #export_fan_eligible_users(c)
+        export_emoji_usage(c, after_dt = datetime.datetime.today() - datetime.timedelta(days = 2), limit = 500)
+        #_ = c.get_guild(F1_GUILD_ID)
         #breakpoint()
 
 main()
