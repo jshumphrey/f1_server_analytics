@@ -320,14 +320,15 @@ def export_reaction_users(connection, channel_id, message_id, emoji_text):
     message = connection.get_message(channel_id, message_id)
     emoji = [emoji for emoji in message["reactions"] if emoji["emoji"]["name"] == emoji_text][0]["emoji"]
     users = connection.get_reaction_users(channel_id, message_id, emoji["name"], emoji["id"])
+    members = {member["user"]["id"]: member for member in connection.get_all_guild_members(F1_GUILD_ID)}
 
     with open("reacted_users.csv", "w") as outfile:
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
         writer.writerow(["User ID", "User Name", "Display Name", "Join Date", "Highest FX Role", "Has NoXP?", "Is Banished?"])
 
         for user in tqdm(users, desc = "Retrieving member data for users"):
-            member = connection.get_guild_member(guild["id"], user["id"])
-            if member:
+            if user in members:
+                member = members[user["id"]]
                 member_roles = [gr["name"] for gr in guild_roles if gr["id"] in member["roles"]]
                 writer.writerow([
                     member["user"]["id"],
@@ -520,8 +521,8 @@ def main():
         #export_reaction_users(c, ANNOUNCEMENTS_CHANNEL_ID, MOD_APPLICATION_MESSAGE_ID, "Bonk")
         #export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2))
         #export_fan_eligible_users(c)
-        export_emoji_usage(c, after_dt = datetime.datetime.today() - datetime.timedelta(days = 2), limit = 500)
+        #export_emoji_usage(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2), limit = 75000)
         #_ = c.get_guild(F1_GUILD_ID)
-        #breakpoint()
+        breakpoint()
 
 main()
