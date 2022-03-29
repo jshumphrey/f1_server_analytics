@@ -315,7 +315,6 @@ def generate_datetime(snowflake):
 def export_reaction_users(connection, channel_id, message_id, emoji_text):
     '''This exports a CSV of data about users that reacted to a particular message
     with a particular emoji. Users that are no longer in the server are ignored.'''
-    guild = connection.get_guild(F1_GUILD_ID)
     guild_roles = connection.get_roles(F1_GUILD_ID)
     message = connection.get_message(channel_id, message_id)
     emoji = [emoji for emoji in message["reactions"] if emoji["emoji"]["name"] == emoji_text][0]["emoji"]
