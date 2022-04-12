@@ -238,7 +238,10 @@ class Connection:
         the next 100 users after, hundred by hundred.'''
         users = []
         message = self.get_message(channel_id, message_id)
-        num_users = [emoji for emoji in message["reactions"] if emoji["emoji"]["id"] == emoji_id][0]["count"]
+        num_users = [
+            reaction for reaction in message["reactions"]
+            if reaction["emoji"]["id"] == emoji_id
+        ][0]["count"]
 
         with tqdm(desc = "Retrieving reaction users", total = num_users) as pbar:
             while True:
@@ -513,9 +516,7 @@ def export_emoji_usage(connection, after_dt = None, before_dt = None, limit = 15
     with open("unused_emoji.csv", "w") as outfile:
         outfile.write("\n".join(["Emoji Name"] + unused_emoji))
 
-def main():
-    '''Execute top-level functionality.'''
-    # pylint: disable = unused-variable
+if __name__ == "__main__":
     with Connection(TOKEN) as c:
         #export_reaction_users(c, ANNOUNCEMENTS_CHANNEL_ID, MOD_APPLICATION_MESSAGE_ID, "Bonk")
         #export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2))
@@ -523,5 +524,3 @@ def main():
         #export_emoji_usage(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2), limit = 75000)
         #_ = c.get_guild(F1_GUILD_ID)
         breakpoint()
-
-main()
