@@ -142,7 +142,7 @@ class Connection:
         '''This returns the JSON for the Channel with the provided Channel ID.'''
         return self.request_json("GET", f"/channels/{channel_id}")
 
-    def get_channel_messages(self, channel_id, after_dt = None, before_dt = None, limit = 15000):
+    def get_channel_messages(self, channel_id, after_dt = None, before_dt = None, limit = 15000, progress_bar = True):
         '''This returns the JSON of messages sent in the channel with the provided Channel ID,
         up to the number of messages in the "limit" argument.
 
@@ -160,7 +160,7 @@ class Connection:
         default_message_id = after_id or before_id or generate_snowflake(datetime.datetime.now()) # Equivalent to COALESCE() in SQL
         direction_param = "after" if after_id else "before"
 
-        with tqdm(desc = f"Retrieving messages in #{channel['name']}", total = limit) as pbar:
+        with tqdm(desc = f"Retrieving messages in #{channel['name']}", total = limit, disable = not progress_bar) as pbar:
             while True:
                 response_messages = self.request_json(
                     request_type = "GET",
@@ -185,7 +185,7 @@ class Connection:
         '''This returns the JSON for the Message with the provided Message ID.'''
         return self.request_json("GET", f"/channels/{channel_id}/messages/{message_id}")
 
-    def get_audit_log_entries(self, user_id = None, action_type = None, after_dt = None, before_dt = None, limit = 15000):
+    def get_audit_log_entries(self, user_id = None, action_type = None, after_dt = None, before_dt = None, limit = 15000, progress_bar = True):
         '''This returns the JSON of audit log entries created by the user with the provided User ID,
         (or by all users, if no user ID is provided), of the provided action type (or all action types,
         if no action type is provided), up to the number of entries in the "limit" argument.
@@ -210,7 +210,7 @@ class Connection:
             | ({"action_type": action_type} if action_type else {})
         )
 
-        with tqdm(desc = "Retrieving audit log entries", total = limit) as pbar:
+        with tqdm(desc = "Retrieving audit log entries", total = limit, disable = not progress_bar) as pbar:
             while True:
                 response_entries = self.request_json(
                     request_type = "GET",
@@ -231,7 +231,7 @@ class Connection:
                     if len(entries) >= limit:
                         return entries # We've hit our limit of entries to pull; return the list
 
-    def get_reaction_users(self, channel_id, message_id, emoji_name, emoji_id):
+    def get_reaction_users(self, channel_id, message_id, emoji_name, emoji_id, progress_bar = True):
         '''This returns a list of User JSONs that reacted to the given message.
         Discord requires that we paginate through the users since we have a limit
         of 100 reacting users at a time, so we need to provide a User ID to pull
@@ -243,7 +243,7 @@ class Connection:
             if reaction["emoji"]["id"] == emoji_id
         ][0]["count"]
 
-        with tqdm(desc = "Retrieving reaction users", total = num_users) as pbar:
+        with tqdm(desc = "Retrieving reaction users", total = num_users, disable = not progress_bar) as pbar:
             while True:
                 response_users = self.request_json(
                     request_type = "GET",
@@ -272,12 +272,12 @@ class Connection:
             else:
                 raise ex
 
-    def get_all_guild_members(self, guild_id):
+    def get_all_guild_members(self, guild_id, progress_bar = True):
         '''This returns a list with the JSON of all members of the guild with the provided Guild ID.'''
         members = []
         num_members = self.get_guild_preview(guild_id)["approximate_member_count"]
 
-        with tqdm(desc = "Retrieving all guild members", total = num_members) as pbar:
+        with tqdm(desc = "Retrieving all guild members", total = num_members, disable = not progress_bar) as pbar:
             while True:
                 response_members = self.request_json(
                     request_type = "GET",
@@ -315,7 +315,7 @@ def generate_datetime(snowflake):
     This essentially does the reverse of generate_snowflake().'''
     return datetime.datetime.fromtimestamp(((int(snowflake) >> 22) + DISCORD_EPOCH) / 1000, tz = datetime.timezone.utc)
 
-def export_reaction_users(connection, channel_id, message_id, emoji_text):
+def export_reaction_users(connection, channel_id, message_id, emoji_text, progress_bar = True):
     '''This exports a CSV of data about users that reacted to a particular message
     with a particular emoji. Users that are no longer in the server are ignored.'''
     guild_roles = connection.get_roles(F1_GUILD_ID)
@@ -328,7 +328,7 @@ def export_reaction_users(connection, channel_id, message_id, emoji_text):
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
         writer.writerow(["User ID", "User Name", "Display Name", "Join Date", "Highest FX Role", "Has NoXP?", "Is Banished?"])
 
-        for user in tqdm(users, desc = "Retrieving member data for users"):
+        for user in tqdm(users, desc = "Retrieving member data for users", disable = not progress_bar):
             if user in members:
                 member = members[user["id"]]
                 member_roles = [gr["name"] for gr in guild_roles if gr["id"] in member["roles"]]
@@ -416,7 +416,7 @@ def get_channel_emoji_usage(connection, channel_id, after_dt = None, before_dt =
 
     return {channel["name"]: output_emoji}
 
-def export_bouncing_users(connection, after_dt = None, before_dt = None):
+def export_bouncing_users(connection, after_dt = None, before_dt = None, progress_bar = True):
     '''This exports a CSV of data about users that "bounced" from the server:
     users that join and then quickly leave the server.'''
     (joins, leaves) = get_joins_leaves(connection, after_dt = after_dt, before_dt = before_dt)
@@ -438,7 +438,7 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None):
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
         writer.writerow(["User ID", "User Name", "User Create TS", "Join TS", ">5min Account Age?", "Leave TS", "Duration", "Verified Email?", "Fan Role?", "Banned?", "Status"])
 
-        for user_id, events in tqdm(user_events.items(), desc = "Retrieving user data"):
+        for user_id, events in tqdm(user_events.items(), desc = "Retrieving user data", disable = not progress_bar):
             if events["leave_dt"] and events["join_dt"] > events["leave_dt"]:
                 continue # These are basically bugged because the user left before the time window. Skip them.
 
