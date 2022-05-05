@@ -20,7 +20,16 @@ MAX_FAILURES = 5
 F1_GUILD_ID = "177387572505346048"
 
 FAN_ROLE_ID = "328635502792278017"
-MOD_ROLE_IDS = ["177408413381165056", "177408501268611073", "293845938764644352", "738665034359767060"]
+ROLE_HIERARCHY = {
+    '177408413381165056': {"name": 'Admin', "rank": 1},
+    '177408501268611073': {"name": 'Stewards', "rank": 2},
+    '293845938764644352': {"name": 'Marshals', "rank": 3},
+    '314910132733739009': {"name": 'F1', "rank": 4},
+    '314910011358707712': {"name": 'F2', "rank": 5},
+    '314909797445271564': {"name": 'F3', "rank": 6},
+    '313677111695245312': {"name": 'F4', "rank": 7},
+    '328635502792278017': {"name": 'Fan', "rank": 8}
+}
 
 ANNOUNCEMENTS_CHANNEL_ID = "361137849736626177"
 F1_GENERAL_CHANNEL_ID = "876046265111167016"
@@ -31,6 +40,8 @@ OFFTRACK_CHANNEL_ID = "242392969213247500"
 SANDBOX_CHANNEL_ID = "242392574193565711"
 LOGS_CHANNEL_ID = "273927887034515457"
 F1_LOGS_CHANNEL_ID = "447397947261452288"
+BLACK_FLAG_CHANNEL_ID = "971819727959769148"
+MODERATION_QUEUE_CHANNEL_ID = "920333356250587156"
 
 SHADOW_USER_ID = "480338490639384576"
 FORMULA_ONE_USER_ID = "424900962449358848"
@@ -47,11 +58,15 @@ class Connection:
     wrap some common individual requests.'''
     def __init__(self, token):
         self.session = requests.Session()
-        self.session.headers = {
-            "Authorization": "Bot " + token.strip(),
-            "Content-Type": "application/json",
-            "X-Ratelimit-Precision": "millisecond"
-        }
+
+        try:
+            self.session.headers = {
+                "Authorization": "Bot " + token.strip(),
+                "Content-Type": "application/json",
+                "X-Ratelimit-Precision": "millisecond"
+            }
+        except AttributeError as ex:
+            raise EnvironmentError("No Discord token was found in the environment - Discord authentication failed!") from ex
 
         self.last_call = time.time()
         self.sleep_delay = BASE_SLEEP_DELAY
@@ -185,6 +200,23 @@ class Connection:
         '''This returns the JSON for the Message with the provided Message ID.'''
         return self.request_json("GET", f"/channels/{channel_id}/messages/{message_id}")
 
+    def send_message(self, channel_id, message_dict):
+        '''This creates and sends a message in the channel with the provided Channel ID.'''
+        return self.request_json("POST", f"/channels/{channel_id}/messages", json = message_dict)
+
+    def get_reacted_messages(self, channel_id, emoji_text, before_dt = None, after_dt = None, limit = 75000, progress_bar = True):
+        '''This retrieves all messages in a given channel that are reacted to with the provided emoji_text.
+
+        If the "before" or "after" arguments are provided (or both), only the messages before
+        or after (or between) the provided datetimes will be retrieved. If neither argument
+        is provided, the most recent messages sent in the channel will be retrieved.'''
+        all_messages = self.get_channel_messages(channel_id, before_dt = before_dt, after_dt = after_dt, limit = limit, progress_bar = progress_bar)
+        return [
+            message for message in all_messages
+            if "reactions" in message
+            and any([reaction["emoji"]["name"] == emoji_text for reaction in message["reactions"]])
+        ]
+
     def get_audit_log_entries(self, user_id = None, action_type = None, after_dt = None, before_dt = None, limit = 15000, progress_bar = True):
         '''This returns the JSON of audit log entries created by the user with the provided User ID,
         (or by all users, if no user ID is provided), of the provided action type (or all action types,
@@ -290,6 +322,14 @@ class Connection:
                 response_members.sort(key = lambda m: m["user"]["id"])
                 members += response_members
                 pbar.update(len(response_members))
+
+def identify_highest_role(guild_member):
+    '''This takes in a guild member (has to be a member, can't just be a user) and returns
+    the "highest" of their roles, according to the F1 Discord server's role hierarchy.'''
+    rankable_roles = [role for role in guild_member["roles"] if role in ROLE_HIERARCHY]
+    if not rankable_roles:
+        return None
+    return ROLE_HIERARCHY[sorted(rankable_roles, key = lambda r: ROLE_HIERARCHY[r]["rank"])[0]]["name"]
 
 def generate_snowflake(dt):
     '''This translates a Python datetime.datetime object into a FAKE Discord Message ID.
@@ -467,7 +507,6 @@ def export_fan_eligible_users(connection):
         member for member in members
         if not member["pending"]
         and FAN_ROLE_ID not in member["roles"]
-        and not list(set(member["roles"]) & set(MOD_ROLE_IDS)) # If there's no intersection
         and not ("bot" in member["user"] and member["user"]["bot"])
     ]
 
