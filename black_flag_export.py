@@ -22,6 +22,7 @@ def get_arguments():
     return parser.parse_args()
 
 def get_reacted_messages(connection, channel_id, emoji_text, after_dt = None, limit = 75000):
+    '''This retrieves all messages in a given channel that are reacted to with the provided emoji_text.'''
     all_messages = connection.get_channel_messages(channel_id, after_dt = after_dt, limit = limit)
     reacted_messages = [
         message for message in all_messages
@@ -41,6 +42,7 @@ def get_reacted_messages(connection, channel_id, emoji_text, after_dt = None, li
     return reacted_messages
 
 def export_reacted_messages(reacted_messages):
+    '''This exports all of the retrieved messages with information about the message and who reacted to it.'''
     with open("black_flag_messages.csv", "w") as outfile:
         writer = csv.writer(outfile, delimiter = ",", quotechar = '"')
         writer.writerow([
@@ -67,6 +69,7 @@ def export_reacted_messages(reacted_messages):
             ])
 
 def main():
+    '''Handle top-level functionality.'''
     args = get_arguments()
     total_time = datetime.timedelta(**{
         arg_name: int(arg_value)

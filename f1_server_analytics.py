@@ -523,4 +523,4 @@ if __name__ == "__main__":
         #export_fan_eligible_users(c)
         #export_emoji_usage(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2), limit = 75000)
         #_ = c.get_guild(F1_GUILD_ID)
-        breakpoint()
+        breakpoint() # pylint: disable = forgotten-debug-statement
