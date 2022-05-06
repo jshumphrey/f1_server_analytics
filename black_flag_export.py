@@ -3,12 +3,16 @@
 messages in certain channels that were reacted to with the :flag-black-1: emoji.'''
 
 import f1_server_analytics as f1sa
-import argparse, csv, datetime, logging
+import argparse, csv, datetime, logging, re
 from tqdm import tqdm
 
+BLACK_FLAG_EMOJI_NAME = "flag_black"
 BLACK_FLAG_EMOJI_ID = "299650191835922432"
 
-CHANNELS_TO_SEARCH = [f1sa.F1_GENERAL_CHANNEL_ID, f1sa.BLACK_FLAG_CHANNEL_ID]
+CHANNELS_TO_SEARCH = [f1sa.F1_GENERAL_CHANNEL_ID, f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID]
+REPORTED_MESSAGE_CHANNELS = [f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID, f1sa.MODERATION_QUEUE_CHANNEL_ID, f1sa.MOD_QUEUE_ARCHIVE_CHANNEL_ID]
+
+NUM_FLAGGERS_LIMIT = 3 # Maximum number of flagging users to list out. The rest will be under "and # others"
 
 logger = logging.getLogger("f1discord")
 
@@ -23,6 +27,73 @@ def get_arguments():
     parser.add_argument("--weeks", action = "store")
     parser.add_argument("-q", "--quiet", action = "store_true")
     return parser.parse_args()
+
+def calculate_total_time(arguments):
+    '''This parses the arguments provided to the script to calculate the requisite time delta.'''
+    time_args = {
+        arg_name: int(arg_value)
+        for arg_name, arg_value in vars(arguments).items()
+        if arg_name in ["weeks", "days", "hours", "minutes", "seconds"]
+        and arg_value is not None
+    }
+    if not time_args:
+        raise ValueError("At least one of '--weeks', '--days', '--hours', '--minutes', or '--seconds' is required.")
+
+    return datetime.timedelta(**time_args)
+
+def get_flagged_messages(connection, channel_ids, after_dt, progress_bar = True):
+    '''This sweeps through the channel_ids provided and returns a list of messages that were black-flagged.'''
+    # First, get a list of all message IDs that have already been reported. We don't want to return these.
+    reported_message_ids = get_reported_message_ids(
+        connection = connection,
+        channel_ids = REPORTED_MESSAGE_CHANNELS,
+        after_dt = after_dt - datetime.timedelta(minutes = 5), # Allow some extra time when looking for reports.
+        progress_bar = progress_bar
+    )
+
+    # Next, sweep each of the provided channels for any messages that got black-flagged.
+    flagged_messages = []
+    for channel_id in channel_ids:
+        flagged_messages += [
+            message for message in connection.get_reacted_messages(
+                channel_id = channel_id,
+                emoji_text = BLACK_FLAG_EMOJI_NAME,
+                after_dt = after_dt,
+                progress_bar = progress_bar
+            )
+            if message["id"] not in reported_message_ids # Exclude messages that have already been reported.
+        ]
+
+    # Finally, retrieve some extra information for the flagged messages, to find out _who_ flagged them.
+    for message in tqdm(flagged_messages, desc = "Processing flagged messages", disable = not progress_bar):
+        message["flaggers"] = connection.get_reaction_users(
+            channel_id = message["channel_id"],
+            message_id = message["id"],
+            emoji_name = BLACK_FLAG_EMOJI_NAME,
+            emoji_id = BLACK_FLAG_EMOJI_ID,
+            progress_bar = False # Don't set this based on the "quiet" arg - it's ALWAYS too noisy in this use-case.
+        )
+
+    return flagged_messages
+
+def get_reported_message_ids(connection, channel_ids, after_dt, progress_bar = True):
+    '''This returns a list of Message IDs that have already been reported - either by this script, or by
+    the Formula One bot. We can use this to avoid exporting messages that have already been reported.'''
+    all_messages = []
+    for channel_id in tqdm(channel_ids, desc = "Scanning channels for reported messages", disable = not progress_bar):
+        all_messages += connection.get_channel_messages(
+            channel_id = channel_id,
+            after_dt = after_dt,
+            progress_bar = False # This is always too noisy in this use-case.
+        )
+
+    return [
+        match for message in all_messages
+        if "embeds" in message # Don't trigger on a normal message
+        and message["embeds"] # Really, don't trigger on a normal message, even if it has an embed
+        and "footer" in message["embeds"][0] # Seriously, actually, only trigger on the messages for reports
+        and (match := re.search(r'Message ID: ([0-9]+)', message["embeds"][0]["footer"]["text"]).group(1))
+    ]
 
 def export_flagged_messages(flagged_messages):
     '''This exports all of the retrieved messages with information about the message and who reacted to it.'''
@@ -54,6 +125,9 @@ def export_flagged_messages(flagged_messages):
 def post_flagged_messages(connection, flagged_messages, progress_bar = True):
     '''This posts a message in #black-flag-queue for each of the flagged messages.'''
     for message in tqdm(flagged_messages, desc = "Sending flagged messages to #black-flag-queue", disable = not progress_bar):
+        flagging_users = ", ".join([f"{user['username']}#{user['discriminator']}" for user in message["flaggers"][:NUM_FLAGGERS_LIMIT]])
+        flagging_users += '' if len(message['flaggers']) <= NUM_FLAGGERS_LIMIT else f", and {str(len(message['flaggers']) - NUM_FLAGGERS_LIMIT)} others"
+
         message_dict = {
             "content": "",
             "embeds": [{
@@ -66,55 +140,34 @@ def post_flagged_messages(connection, flagged_messages, progress_bar = True):
                     f"Sent a message in <#{message['channel_id']}> that was black-flagged. "
                     f"[Jump to message](https://discord.com/channels/{f1sa.F1_GUILD_ID}/{message['channel_id']}/{message['id']})\n\n"
                     f"**Message:** {message['content']}\n\n"
-                    f"**Black-flagged by:** {message['flagger']['username']}#{message['flagger']['discriminator']}"
+                    f"**Black-flagged by:** {flagging_users}"
                 ),
                 "footer": {"text": f"User ID: {message['author']['id']} - Message ID: {message['id']}"}
             }],
         }
-        connection.send_message(channel_id = f1sa.BLACK_FLAG_CHANNEL_ID, message_dict = message_dict)
+        connection.send_message(channel_id = f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID, message_dict = message_dict)
 
 def main():
     '''Handle top-level functionality.'''
     args = get_arguments()
-    time_args = {
-        arg_name: int(arg_value)
-        for arg_name, arg_value in vars(args).items()
-        if arg_name in ["weeks", "days", "hours", "minutes", "seconds"]
-        and arg_value is not None
-    }
-    if not time_args:
-        raise ValueError("At least one of '--weeks', '--days', '--hours', '--minutes', or '--seconds' is required.")
-    total_time = datetime.timedelta(**time_args)
+    total_time = calculate_total_time(args)
 
-    with f1sa.Connection(f1sa.TOKEN) as c:
-        flagged_messages = []
-        for channel_id in CHANNELS_TO_SEARCH:
-            flagged_messages += c.get_reacted_messages(
-                channel_id = channel_id,
-                emoji_text = "flag_black",
-                after_dt = datetime.datetime.now() - total_time,
-                progress_bar = not args.quiet
-            )
+    with f1sa.Connection(f1sa.TOKEN) as connection:
+        flagged_messages = get_flagged_messages(
+            connection = connection,
+            channel_ids = CHANNELS_TO_SEARCH,
+            after_dt = datetime.datetime.now() - total_time,
+            progress_bar = not args.quiet
+        )
 
-        if not flagged_messages:
+        if flagged_messages:
+            if args.export_method == "file":
+                export_flagged_messages(flagged_messages)
+            else:
+                post_flagged_messages(connection, flagged_messages, progress_bar = not args.quiet)
+        else:
             if not args.quiet:
                 print("No messages were black-flagged in the specified time window.")
-            return # Exit out.
-
-        for message in tqdm(flagged_messages, desc = "Processing flagged messages", disable = args.quiet):
-            reacted_users = c.get_reaction_users(
-                channel_id = message["channel_id"],
-                message_id = message["id"],
-                emoji_name = "flag_black",
-                emoji_id = BLACK_FLAG_EMOJI_ID,
-                progress_bar = False
-            )
-            message["flagger"] = reacted_users[0]
-
-        if args.export_method == "file":
-            export_flagged_messages(flagged_messages)
-        else:
-            post_flagged_messages(c, flagged_messages, progress_bar = not args.quiet)
 
 if __name__ == "__main__":
     main()
