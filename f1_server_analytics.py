@@ -86,7 +86,7 @@ class Connection:
         is not valid, and the user needs to fix this before trying again.'''
         try:
             self.get_self()
-            logger.info("Successfully retrieved data using the provided token!")
+            logger.debug("Successfully retrieved data using the provided token!")
         except requests.HTTPError as ex:
             raise EnvironmentError("The token provided is not valid - Discord authentication failed!") from ex
 

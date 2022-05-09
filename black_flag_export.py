@@ -14,7 +14,8 @@ REPORTED_MESSAGE_CHANNELS = [f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID, f1sa.MODERATION_Q
 
 NUM_FLAGGERS_LIMIT = 3 # Maximum number of flagging users to list out. The rest will be under "and # others"
 
-logger = logging.getLogger("f1discord")
+logging.basicConfig()
+logger = logging.getLogger("black_flag_export")
 
 def get_arguments():
     '''This handles the parsing of various arguments to the script.'''
@@ -26,6 +27,8 @@ def get_arguments():
     parser.add_argument("--days", action = "store")
     parser.add_argument("--weeks", action = "store")
     parser.add_argument("-q", "--quiet", action = "store_true")
+    parser.add_argument("--no-progress", action = "store_true")
+    parser.add_argument("--verbose", action = "store_true")
     return parser.parse_args()
 
 def calculate_total_time(arguments):
@@ -50,6 +53,7 @@ def get_flagged_messages(connection, channel_ids, after_dt, progress_bar = True)
         after_dt = after_dt - datetime.timedelta(minutes = 5), # Allow some extra time when looking for reports.
         progress_bar = progress_bar
     )
+    logger.debug(f"Found that message IDs {', '.join(reported_message_ids)} have already been reported since {after_dt - datetime.timedelta(minutes = 5)!s}")
 
     # Next, sweep each of the provided channels for any messages that got black-flagged.
     flagged_messages = []
@@ -71,8 +75,9 @@ def get_flagged_messages(connection, channel_ids, after_dt, progress_bar = True)
             message_id = message["id"],
             emoji_name = BLACK_FLAG_EMOJI_NAME,
             emoji_id = BLACK_FLAG_EMOJI_ID,
-            progress_bar = False # Don't set this based on the "quiet" arg - it's ALWAYS too noisy in this use-case.
+            progress_bar = False # Don't set this based on the "no_progress" arg - it's ALWAYS too noisy in this use-case.
         )
+        logger.debug(f"Found new black-flagged message ID {message['id']}, sent by {message['author']['username']}#{message['author']['discriminator']}")
 
     return flagged_messages
 
@@ -84,7 +89,7 @@ def get_reported_message_ids(connection, channel_ids, after_dt, progress_bar = T
         all_messages += connection.get_channel_messages(
             channel_id = channel_id,
             after_dt = after_dt,
-            progress_bar = False # This is always too noisy in this use-case.
+            progress_bar = False # This is ALWAYS too noisy in this use-case.
         )
 
     return [
@@ -122,6 +127,8 @@ def export_flagged_messages(flagged_messages):
                 message["flagger"]["id"],
             ])
 
+        logger.debug(f"Wrote {len(flagged_messages)!s} records to black_flag_messages.csv")
+
 def post_flagged_messages(connection, flagged_messages, progress_bar = True):
     '''This posts a message in #black-flag-queue for each of the flagged messages.'''
     for message in tqdm(flagged_messages, desc = "Sending flagged messages to #black-flag-queue", disable = not progress_bar):
@@ -146,10 +153,16 @@ def post_flagged_messages(connection, flagged_messages, progress_bar = True):
             }],
         }
         connection.send_message(channel_id = f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID, message_dict = message_dict)
+        logger.debug(f"Successfully sent a Discord message for message ID {message['id']}")
 
 def main():
     '''Handle top-level functionality.'''
     args = get_arguments()
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+    elif args.quiet:
+        logger.setLevel(logging.WARNING)
+
     total_time = calculate_total_time(args)
 
     with f1sa.Connection(f1sa.TOKEN) as connection:
@@ -157,17 +170,16 @@ def main():
             connection = connection,
             channel_ids = CHANNELS_TO_SEARCH,
             after_dt = datetime.datetime.now() - total_time,
-            progress_bar = not args.quiet
+            progress_bar = not args.no_progress
         )
 
         if flagged_messages:
             if args.export_method == "file":
                 export_flagged_messages(flagged_messages)
             else:
-                post_flagged_messages(connection, flagged_messages, progress_bar = not args.quiet)
+                post_flagged_messages(connection, flagged_messages, progress_bar = not args.no_progress)
         else:
-            if not args.quiet:
-                print("No messages were black-flagged in the specified time window.")
+            logger.info("No messages were black-flagged in the specified time window.")
 
 if __name__ == "__main__":
     main()
