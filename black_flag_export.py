@@ -9,8 +9,15 @@ from tqdm import tqdm
 BLACK_FLAG_EMOJI_NAME = "flag_black"
 BLACK_FLAG_EMOJI_ID = "299650191835922432"
 
-CHANNELS_TO_SEARCH = [f1sa.F1_GENERAL_CHANNEL_ID, f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID]
-REPORTED_MESSAGE_CHANNELS = [f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID, f1sa.MODERATION_QUEUE_CHANNEL_ID, f1sa.MOD_QUEUE_ARCHIVE_CHANNEL_ID]
+CHANNELS_TO_SEARCH = [
+    f1sa.F1_GENERAL_CHANNEL_ID,
+    f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID,
+]
+REPORTED_MESSAGE_CHANNELS = [
+    f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID,
+    f1sa.MODERATION_QUEUE_CHANNEL_ID,
+    f1sa.MOD_QUEUE_ARCHIVE_CHANNEL_ID,
+]
 
 NUM_FLAGGERS_LIMIT = 3 # Maximum number of flagging users to list out. The rest will be under "and # others"
 
@@ -66,6 +73,7 @@ def get_flagged_messages(connection, channel_ids, after_dt, progress_bar = True)
                 progress_bar = progress_bar
             )
             if message["id"] not in reported_message_ids # Exclude messages that have already been reported.
+            and message["author"]["id"] not in f1sa.MOD_USER_IDS # Exclude messages sent by mods.
         ]
 
     # Finally, retrieve some extra information for the flagged messages, to find out _who_ flagged them.
