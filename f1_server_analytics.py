@@ -223,6 +223,11 @@ class Connection:
         '''This creates and sends a message in the channel with the provided Channel ID.'''
         return self.request_json("POST", f"/channels/{channel_id}/messages", json = message_dict)
 
+    def delete_message(self, channel_id, message_id):
+        '''This deletes the the Message with the provided Message ID. Remember
+        that you need the Manage Message permission in the channel to do this!'''
+        return self.request_json("DELETE", f"/channels/{channel_id}/messages/{message_id}")
+
     def get_reacted_messages(self, channel_id, emoji_text, before_dt = None, after_dt = None, limit = 75000, progress_bar = True):
         '''This retrieves all messages in a given channel that are reacted to with the provided emoji_text.
 
