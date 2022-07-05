@@ -28,7 +28,7 @@ ROLE_HIERARCHY = {
     '314910011358707712': {"name": 'F2', "rank": 5},
     '314909797445271564': {"name": 'F3', "rank": 6},
     '313677111695245312': {"name": 'F4', "rank": 7},
-    '328635502792278017': {"name": 'Fan', "rank": 8},
+    #'328635502792278017': {"name": 'Fan', "rank": 8}, The Fan role no longer exists
 }
 
 ANNOUNCEMENTS_CHANNEL_ID = "361137849736626177"
@@ -64,6 +64,12 @@ MOD_USER_IDS = [
     "111928351798636544", # ren
     "417602648422875136", # Sean Archer
     "380314643844956160", # ToAerooNoootDynamicist
+]
+
+BOT_USER_IDS = [
+    "424900962449358848", # Formula One
+    "886984180800577636", # Formula One Dev
+    "480338490639384576", # Shadow
 ]
 
 MOD_APPLICATION_MESSAGE_ID = "935642010419879957"
@@ -353,7 +359,7 @@ def identify_highest_role(guild_member):
     rankable_roles = [role for role in guild_member["roles"] if role in ROLE_HIERARCHY]
     if not rankable_roles:
         return None
-    return ROLE_HIERARCHY[sorted(rankable_roles, key = lambda r: ROLE_HIERARCHY[r]["rank"])[0]]["name"]
+    return ROLE_HIERARCHY[sorted(rankable_roles, key = lambda r: ROLE_HIERARCHY[r]["rank"])[0]]
 
 def generate_snowflake(dt):
     '''This translates a Python datetime.datetime object into a FAKE Discord Message ID.

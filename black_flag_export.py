@@ -9,14 +9,17 @@ from tqdm import tqdm
 BLACK_FLAG_EMOJI_NAME = "flag_black"
 BLACK_FLAG_EMOJI_ID = "299650191835922432"
 
-CHANNELS_TO_SEARCH = [f1sa.F1_GENERAL_CHANNEL_ID]
+CHANNELS_TO_SEARCH = [
+    f1sa.F1_GENERAL_CHANNEL_ID,
+    f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID,
+]
 REPORTED_MESSAGE_CHANNELS = [
     f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID,
     f1sa.MODERATION_QUEUE_CHANNEL_ID,
     f1sa.MOD_QUEUE_ARCHIVE_CHANNEL_ID,
 ]
 
-NUM_FLAGGERS_LIMIT = 3 # Maximum number of flagging users to list out. The rest will be under "and # others"
+NUM_FLAGGERS_LIMIT = 5 # Maximum number of flagging users to list out. The rest will be under "and # others"
 
 logging.basicConfig()
 logger = logging.getLogger("black_flag_export")
@@ -75,13 +78,17 @@ def get_flagged_messages(connection, channel_ids, after_dt, progress_bar = True)
 
     # Finally, retrieve some extra information for the flagged messages, to find out _who_ flagged them.
     for message in tqdm(flagged_messages, desc = "Processing flagged messages", disable = not progress_bar):
-        message["flaggers"] = connection.get_reaction_users(
+        flaggers = connection.get_reaction_users(
             channel_id = message["channel_id"],
             message_id = message["id"],
             emoji_name = BLACK_FLAG_EMOJI_NAME,
             emoji_id = BLACK_FLAG_EMOJI_ID,
             progress_bar = False # Don't set this based on the "no_progress" arg - it's ALWAYS too noisy in this use-case.
         )
+        for user in flaggers:
+            member = connection.get_guild_member(guild_id = f1sa.F1_GUILD_ID, user_id = user["id"])
+            user["highest_role"] = f1sa.identify_highest_role(member) or {"name": 'None', "rank": 99}
+        message["flaggers"] = sorted(flaggers, key = lambda x: x["highest_role"]["rank"])
         logger.debug(f"Found new black-flagged message ID {message['id']}, sent by {message['author']['username']}#{message['author']['discriminator']}")
 
     return flagged_messages
@@ -137,8 +144,14 @@ def export_flagged_messages(flagged_messages):
 def post_flagged_messages(connection, flagged_messages, progress_bar = True):
     '''This posts a message in #black-flag-queue for each of the flagged messages.'''
     for message in tqdm(flagged_messages, desc = "Sending flagged messages to #black-flag-queue", disable = not progress_bar):
-        flagging_users = ", ".join([f"{user['username']}#{user['discriminator']}" for user in message["flaggers"][:NUM_FLAGGERS_LIMIT]])
-        flagging_users += '' if len(message['flaggers']) <= NUM_FLAGGERS_LIMIT else f", and {str(len(message['flaggers']) - NUM_FLAGGERS_LIMIT)} others"
+        flagging_users = ", ".join([
+            f"{user['username']}#{user['discriminator']} ({user['highest_role']['name']})"
+            for user in message["flaggers"][:NUM_FLAGGERS_LIMIT]
+        ])
+        flagging_users += (
+            '' if len(message['flaggers']) <= NUM_FLAGGERS_LIMIT
+            else f", and {str(len(message['flaggers']) - NUM_FLAGGERS_LIMIT)} others"
+        )
 
         message_dict = {
             "content": "",
