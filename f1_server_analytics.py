@@ -21,14 +21,14 @@ F1_GUILD_ID = "177387572505346048"
 
 FAN_ROLE_ID = "328635502792278017"
 ROLE_HIERARCHY = {
-    '177408413381165056': {"name": 'Admin', "rank": 1},
-    '177408501268611073': {"name": 'Stewards', "rank": 2},
-    '293845938764644352': {"name": 'Marshals', "rank": 3},
-    '314910132733739009': {"name": 'F1', "rank": 4},
-    '314910011358707712': {"name": 'F2', "rank": 5},
-    '314909797445271564': {"name": 'F3', "rank": 6},
-    '313677111695245312': {"name": 'F4', "rank": 7},
-    #'328635502792278017': {"name": 'Fan', "rank": 8}, The Fan role no longer exists
+    '177408413381165056': {"name": 'Admin', "rank": 1, "flag_score": 1.0},
+    '177408501268611073': {"name": 'Stewards', "rank": 2, "flag_score": 0.8},
+    '293845938764644352': {"name": 'Marshals', "rank": 3, "flag_score": 0.6},
+    '314910132733739009': {"name": 'F1', "rank": 4, "flag_score": 0.4},
+    '314910011358707712': {"name": 'F2', "rank": 5, "flag_score": 0.3},
+    '314909797445271564': {"name": 'F3', "rank": 6, "flag_score": 0.2},
+    '313677111695245312': {"name": 'F4', "rank": 7, "flag_score": 0.1},
+    #'328635502792278017': {"name": 'Fan', "rank": 8, "flag_score": 0.05}, The Fan role no longer exists
 }
 
 ANNOUNCEMENTS_CHANNEL_ID = "361137849736626177"
@@ -353,13 +353,20 @@ class Connection:
                 members += response_members
                 pbar.update(len(response_members))
 
-def identify_highest_role(guild_member):
-    '''This takes in a guild member (has to be a member, can't just be a user) and returns
-    the "highest" of their roles, according to the F1 Discord server's role hierarchy.'''
-    rankable_roles = [role for role in guild_member["roles"] if role in ROLE_HIERARCHY]
-    if not rankable_roles:
-        return None
-    return ROLE_HIERARCHY[sorted(rankable_roles, key = lambda r: ROLE_HIERARCHY[r]["rank"])[0]]
+    def get_highest_role(self, user):
+        '''This takes in a user (you can also pass a full guild member object to save an API call)
+        and returns the "highest" of their roles, according to the F1 Discord server's role hierarchy.
+        If the user has left the guild, or if the user does not belong to any of the ranked roles,
+        special role objects are returned to reflect this.'''
+        guild_member = user if "roles" in user else self.get_guild_member(F1_GUILD_ID, user["id"])
+        if not guild_member:
+            return {"name": 'Left', "rank": 999, "flag_score": 0}
+
+        rankable_roles = [role for role in guild_member["roles"] if role in ROLE_HIERARCHY]
+        if not rankable_roles:
+            return {"name": 'None', "rank": 99, "flag_score": 0.05}
+
+        return ROLE_HIERARCHY[sorted(rankable_roles, key = lambda r: ROLE_HIERARCHY[r]["rank"])[0]]
 
 def generate_snowflake(dt):
     '''This translates a Python datetime.datetime object into a FAKE Discord Message ID.
