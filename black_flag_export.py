@@ -190,7 +190,7 @@ def post_flagged_messages(connection, flagged_messages, progress_bar = True):
             "embeds": [{
                 "type": "rich",
                 "author": {
-                    "name": f"{message['author']['username']}#{message['author']['discriminator']}",
+                    "name": f"{message['author']['username']}#{message['author']['discriminator']} ({message['author']['highest_role']['name']})",
                     "icon_url": f"https://cdn.discordapp.com/avatars/{message['author']['id']}/{message['author']['avatar']}.webp"
                 },
                 "description": (
