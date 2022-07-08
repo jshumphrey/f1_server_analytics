@@ -180,6 +180,10 @@ def post_flagged_messages(connection, flagged_messages, progress_bar = True):
             '' if len(message['flaggers']) <= NUM_FLAGGERS_LIMIT
             else f", and {str(len(message['flaggers']) - NUM_FLAGGERS_LIMIT)} others"
         )
+        flagging_ranks = {
+            rank: [flagger["highest_role"]["name"] for flagger in message["flaggers"]].count(rank)
+            for rank in [flagger["highest_role"]["name"] for flagger in message["flaggers"]]
+        }
 
         message_dict = {
             "content": "",
@@ -194,7 +198,7 @@ def post_flagged_messages(connection, flagged_messages, progress_bar = True):
                     f"[Jump to message](https://discord.com/channels/{f1sa.F1_GUILD_ID}/{message['channel_id']}/{message['id']})\n\n"
                     f"**Message:** {message['content']}\n\n"
                     f"**Black-flagged by:** {flagging_users}\n\n"
-                    f"**Total flag score:** {message['flag_score']}"
+                    f"**Total flag score:** {message['flag_score']}: {flagging_ranks!s}"
                 ),
                 "footer": {"text": f"User ID: {message['author']['id']} - Message ID: {message['id']}"}
             }],
