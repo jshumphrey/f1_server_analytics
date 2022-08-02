@@ -77,6 +77,9 @@ MOD_APPLICATION_MESSAGE_ID = "935642010419879957"
 MEMBER_UPDATE_ACTION_TYPE = 24
 MEMBER_ROLE_UPDATE_ACTION_TYPE = 25
 
+REPORT_ACTION_REGEX = r"(Punished|Ignored|Banned) by \*\*(\w+\#\d{4})\*\*"
+REPORTER_REGEX = r"\*\*Reporter:\*\* (\w+\#\d{4})"
+
 class Connection:
     '''This class wraps a requests Session, wraps the process of making a request via the
     Discord API (handling rate limits, etc.), and includes a number of methods that
@@ -450,6 +453,39 @@ def get_bans(connection, after_dt = None, before_dt = None):
         and "**Action:** Ban" in message["embeds"][0]["description"]
     }
 
+def get_reports(connection, after_dt = None, before_dt = None):
+    """This is a subroutine that sweeps through the Moderation Queue Archive channel and collects
+    all of the situations that were raised to the attention of the moderators, whether via
+    user reports or by one of the automated message-analysis tools."""
+    messages = connection.get_channel_messages(MOD_QUEUE_ARCHIVE_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt)
+    report_messages = [
+        message for message in messages
+        if message["author"] == FORMULA_ONE_USER_ID
+        and "embeds" in message
+    ]
+    reports = []
+
+    for message in report_messages:
+        description = message["embeds"][0]["description"]
+        report_type = (
+            "User Report" if "Report" in description
+            else "Perspective API" if "Perspective" in description
+            else "Geoff4URLs" if "geoff4URLs" in description
+            else "Unknown - " + description[:description.find(r"\n")]
+        )
+        (report_status, actioning_moderator) = re.match(REPORT_ACTION_REGEX, message["content"].groups())
+
+        reports.append({
+            "message": message,
+            "user": message["author"],
+            "report_type": report_type,
+            "reporter": re.match(REPORTER_REGEX, description).groups(0) if report_type == "User Report" else "N/A",
+            "report_status": report_status,
+            "actioning_moderator": actioning_moderator,
+        })
+
+    return reports
+
 def get_fan_role_grants(connection, after_dt = None, before_dt = None):
     '''This is a subroutine that gets all of the times when a user was granted the Fan role
     by the Formula One bot. This returns a dict of {user_id: audit log entry}.'''
@@ -592,11 +628,37 @@ def export_emoji_usage(connection, after_dt = None, before_dt = None, limit = 15
     with open("unused_emoji.csv", "w") as outfile:
         outfile.write("\n".join(["Emoji Name"] + unused_emoji))
 
+def export_moderation_statistics(connection, after_dt = None, before_dt = None):
+    """This exports a CSV of information about moderation action taken on
+    the reported messages in the specified timeframe """
+    reports = get_reports(connection, after_dt = after_dt, before_dt = before_dt)
+    with open("moderation_statistics.csv", "w", encoding = "utf-8") as outfile:
+        writer = csv.writer(outfile, delimiter = ",", quotechar = '"')
+        writer.writerow([
+            "Report Timestamp",
+            "Offending Username",
+            "Report Type",
+            "Reporting Username",
+            "Report Status",
+            "Actioning Moderator",
+        ])
+        writer.writerows(
+            [[
+                report["message"]["timestamp"][:10],
+                f"{report['user']['username']}#{report['user']['discriminator']}",
+                report["report_type"],
+                report["reporter"],
+                report["report_status"],
+                report["actioning_moderator"],
+            ] for report in reports]
+        )
+
 if __name__ == "__main__":
     with Connection(TOKEN) as c:
         #export_reaction_users(c, ANNOUNCEMENTS_CHANNEL_ID, MOD_APPLICATION_MESSAGE_ID, "Bonk")
         #export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2))
         #export_fan_eligible_users(c)
         #export_emoji_usage(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2), limit = 75000)
+        export_moderation_statistics(c, after_dt = datetime.datetime.today() - datetime.timedelta(days = 5))
         #_ = c.get_guild(F1_GUILD_ID)
         breakpoint() # pylint: disable = forgotten-debug-statement
