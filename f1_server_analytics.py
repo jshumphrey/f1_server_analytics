@@ -1,5 +1,6 @@
 #! /usr/bin/env python
-'''This is a standalone script to dump out information about the F1 Discord server and its users.'''
+'''This provides a wrapper around the Discord HTTP API to help with some common kinds of requests.
+This is designed to be importable by another script that's more tailored to a particular use-case.'''
 
 import csv, datetime, dotenv, itertools, logging, os, re, requests, time # pylint: disable = unused-import
 from tqdm import tqdm
@@ -28,7 +29,7 @@ ROLE_HIERARCHY = {
     '314910011358707712': {"name": 'F2', "rank": 5, "flag_score": 0.3},
     '314909797445271564': {"name": 'F3', "rank": 6, "flag_score": 0.2},
     '313677111695245312': {"name": 'F4', "rank": 7, "flag_score": 0.1},
-    #'328635502792278017': {"name": 'Fan', "rank": 8, "flag_score": 0.05}, The Fan role no longer exists
+    #'328635502792278017': {"name": 'Fan', "rank": 8, "flag_score": 0.05}, # The Fan role no longer exists
 }
 
 ANNOUNCEMENTS_CHANNEL_ID = "361137849736626177"
