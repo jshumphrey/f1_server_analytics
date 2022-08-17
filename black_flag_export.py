@@ -133,7 +133,7 @@ def get_reported_message_ids(connection, channel_ids, after_dt, progress_bar = T
 
 def export_flagged_messages(flagged_messages):
     '''This exports all of the retrieved messages with information about the message and who reacted to it.'''
-    with open("black_flag_messages.csv", "w") as outfile:
+    with open("black_flag_messages.csv", "w", encoding = "utf-8") as outfile:
         writer = csv.writer(outfile, delimiter = ",", quotechar = '"')
         writer.writerow([
             "Channel",
@@ -198,7 +198,7 @@ def post_flagged_messages(connection, flagged_messages, progress_bar = True):
                     f"[Jump to message](https://discord.com/channels/{f1sa.F1_GUILD_ID}/{message['channel_id']}/{message['id']})\n\n"
                     f"**Message:** {message['content']}\n\n"
                     f"**Black-flagged by:** {flagging_users}\n\n"
-                    f"**Total flag score:** {message['flag_score']}: {flagging_ranks!s}"
+                    f"**Total flag score:** {round(message['flag_score'], 2)!s}: {flagging_ranks!s}"
                 ),
                 "footer": {"text": f"User ID: {message['author']['id']} - Message ID: {message['id']}"}
             }],

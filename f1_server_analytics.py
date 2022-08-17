@@ -77,8 +77,8 @@ MOD_APPLICATION_MESSAGE_ID = "935642010419879957"
 MEMBER_UPDATE_ACTION_TYPE = 24
 MEMBER_ROLE_UPDATE_ACTION_TYPE = 25
 
-REPORT_ACTION_REGEX = r"(Punished|Ignored|Banned) by \*\*(\w+\#\d{4})\*\*"
-REPORTER_REGEX = r"\*\*Reporter:\*\* (\w+\#\d{4})"
+REPORT_ACTION_REGEX = r"(Punished|Ignored|Banned|Escalated) by \*\*([^\s]+.+\#\d{4})\*\*"
+REPORTER_REGEX = r"\*\*Reporter\:\*\* ([^\s]+.+\#\d{4})"
 
 class Connection:
     '''This class wraps a requests Session, wraps the process of making a request via the
@@ -124,6 +124,7 @@ class Connection:
         in a basic delay between requests, we get a more stable average request time.'''
         time_since_last_call = round(time.time() - self.last_call, 4)
         time_to_sleep = max(self.sleep_delay - time_since_last_call, 0)
+
         if time_to_sleep > 0:
             logger.debug(f"It's only been {time_since_last_call!s} seconds since the last call, sleeping for {time_to_sleep!s}s")
             time.sleep(time_to_sleep)
@@ -135,21 +136,22 @@ class Connection:
         and sleeping for the appropriate amount of time to avoid rate limits.
         If/when we receive a valid response, its JSON is returned.'''
         failures = 0
+
         while True:
             self.bucket_sleep()
             try:
                 response = self.session.request(request_type, URL_BASE + suburl, **kwargs)
-                response.raise_for_status() # Potential exit from the function - crash out due to a bad request
+                response.raise_for_status()
                 return response.json() # Potential exit from the function - return the JSON of a valid response
 
             except requests.HTTPError as ex:
-                if ex.response.status_code == 429:
+                if ex.response.status_code == 429: # 429 errors are "you're requesting too fast" - handle these differently than other errors
                     time_to_sleep = ex.response.json()["retry_after"]
                     logger.debug(f"Hit the Discord rate limiter; sleeping for {time_to_sleep!s} seconds")
                     self.sleep_delay += 0.05 # If we hit the rate limiter, back off the request speed bit by bit.
                     time.sleep(time_to_sleep)
                 else:
-                    raise ex
+                    raise ex # Potential exit from the function - crash out due to a bad request
 
             except (requests.ConnectionError, requests.Timeout) as ex:
                 failures += 1
@@ -371,7 +373,7 @@ class Connection:
 
         return ROLE_HIERARCHY[sorted(rankable_roles, key = lambda r: ROLE_HIERARCHY[r]["rank"])[0]]
 
-def generate_snowflake(dt):
+def generate_snowflake(input_datetime):
     '''This translates a Python datetime.datetime object into a FAKE Discord Message ID.
     This Message ID is one that would have been sent at the datetime provided.
 
@@ -388,7 +390,7 @@ def generate_snowflake(dt):
 
     Again, this Message ID is _not_ the ID of any _real_ message, but you _can_ use it
     as a point of reference to be able to jump to a point in time of a channel's message history.'''
-    return str(int((dt.timestamp() * 1000) - DISCORD_EPOCH) << 22)
+    return str(int((input_datetime.timestamp() * 1000) - DISCORD_EPOCH) << 22)
 
 def generate_datetime(snowflake):
     '''This parses the creation datetime from a Discord [whatever] ID.
@@ -404,7 +406,7 @@ def export_reaction_users(connection, channel_id, message_id, emoji_text, progre
     users = connection.get_reaction_users(channel_id, message_id, emoji["name"], emoji["id"])
     members = {member["user"]["id"]: member for member in connection.get_all_guild_members(F1_GUILD_ID)}
 
-    with open("reacted_users.csv", "w") as outfile:
+    with open("reacted_users.csv", "w", encoding = "utf-8") as outfile:
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
         writer.writerow(["User ID", "User Name", "Display Name", "Join Date", "Highest FX Role", "Has NoXP?", "Is Banished?"])
 
@@ -460,8 +462,12 @@ def get_reports(connection, after_dt = None, before_dt = None):
     messages = connection.get_channel_messages(MOD_QUEUE_ARCHIVE_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt)
     report_messages = [
         message for message in messages
-        if message["author"] == FORMULA_ONE_USER_ID
+        if message["author"]["id"] == FORMULA_ONE_USER_ID
         and "embeds" in message
+        and "Successfully removed" not in message["embeds"][0]["description"]
+        and "Member not found" not in message["embeds"][0]["description"]
+        and "NoXP" not in message["embeds"][0]["description"]
+        and "Already banned" not in message["content"]
     ]
     reports = []
 
@@ -471,15 +477,16 @@ def get_reports(connection, after_dt = None, before_dt = None):
             "User Report" if "Report" in description
             else "Perspective API" if "Perspective" in description
             else "Geoff4URLs" if "geoff4URLs" in description
+            else "Automatic Mute" if "Posted 3 or more violations" in description
             else "Unknown - " + description[:description.find(r"\n")]
         )
-        (report_status, actioning_moderator) = re.match(REPORT_ACTION_REGEX, message["content"].groups())
+        (report_status, actioning_moderator) = re.search(REPORT_ACTION_REGEX, message["content"]).groups()
 
         reports.append({
             "message": message,
-            "user": message["author"],
+            "user": message["embeds"][0]["author"],
             "report_type": report_type,
-            "reporter": re.match(REPORTER_REGEX, description).groups(0) if report_type == "User Report" else "N/A",
+            "reporter": re.search(REPORTER_REGEX, description).groups(0)[0] if report_type == "User Report" else "N/A",
             "report_status": report_status,
             "actioning_moderator": actioning_moderator,
         })
@@ -547,7 +554,7 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None, progres
         for user_id in joins.keys()
     }
 
-    with open("bouncing_users.csv", "w") as outfile:
+    with open("bouncing_users.csv", "w", encoding = "utf-8") as outfile:
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
         writer.writerow(["User ID", "User Name", "User Create TS", "Join TS", ">5min Account Age?", "Leave TS", "Duration", "Verified Email?", "Fan Role?", "Banned?", "Status"])
 
@@ -583,7 +590,7 @@ def export_fan_eligible_users(connection):
         and not ("bot" in member["user"] and member["user"]["bot"])
     ]
 
-    with open("fan_eligible_users.csv", "w") as outfile:
+    with open("fan_eligible_users.csv", "w", encoding = "utf-8") as outfile:
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
         writer.writerow(["User ID", "User Name", "Display Name", "Join Date", "Roles"])
 
@@ -614,7 +621,7 @@ def export_emoji_usage(connection, after_dt = None, before_dt = None, limit = 15
 
     guild_emoji = {emoji["name"]: emoji["id"] for emoji in connection.get_all_emoji(F1_GUILD_ID)}
 
-    with open("emoji_usage.csv", "w") as outfile:
+    with open("emoji_usage.csv", "w", encoding = "utf-8") as outfile:
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
         writer.writerow(["Emoji Name", "Channel", "Times Used in Messages", "Times Used as Reaction"])
         for channel, usage_dict in emoji_usage.items():
@@ -625,7 +632,7 @@ def export_emoji_usage(connection, after_dt = None, before_dt = None, limit = 15
     all_used_emoji = list(itertools.chain.from_iterable([emojis.keys() for channel, emojis in emoji_usage.items()]))
     unused_emoji = sorted([emoji for emoji in guild_emoji.keys() if emoji not in all_used_emoji])
 
-    with open("unused_emoji.csv", "w") as outfile:
+    with open("unused_emoji.csv", "w", encoding = "utf-8") as outfile:
         outfile.write("\n".join(["Emoji Name"] + unused_emoji))
 
 def export_moderation_statistics(connection, after_dt = None, before_dt = None):
@@ -642,16 +649,14 @@ def export_moderation_statistics(connection, after_dt = None, before_dt = None):
             "Report Status",
             "Actioning Moderator",
         ])
-        writer.writerows(
-            [[
-                report["message"]["timestamp"][:10],
-                f"{report['user']['username']}#{report['user']['discriminator']}",
-                report["report_type"],
-                report["reporter"],
-                report["report_status"],
-                report["actioning_moderator"],
-            ] for report in reports]
-        )
+        writer.writerows([[
+            report["message"]["timestamp"],
+            report["user"]["name"],
+            report["report_type"],
+            report["reporter"],
+            report["report_status"],
+            report["actioning_moderator"],
+        ] for report in reports])
 
 if __name__ == "__main__":
     with Connection(TOKEN) as c:
@@ -659,6 +664,6 @@ if __name__ == "__main__":
         #export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2))
         #export_fan_eligible_users(c)
         #export_emoji_usage(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2), limit = 75000)
-        export_moderation_statistics(c, after_dt = datetime.datetime.today() - datetime.timedelta(days = 5))
+        export_moderation_statistics(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 4))
         #_ = c.get_guild(F1_GUILD_ID)
         breakpoint() # pylint: disable = forgotten-debug-statement
