@@ -464,6 +464,7 @@ def get_reports(connection, after_dt = None, before_dt = None):
     report_messages = [
         message for message in messages
         if message["author"]["id"] == FORMULA_ONE_USER_ID
+        and message["content"] != ""
         and "embeds" in message
         and "Successfully removed" not in message["embeds"][0]["description"]
         and "Member not found" not in message["embeds"][0]["description"]
@@ -485,6 +486,7 @@ def get_reports(connection, after_dt = None, before_dt = None):
 
         reports.append({
             "message": message,
+            "timestamp": datetime.datetime.fromisoformat(message["timestamp"]),
             "user": message["embeds"][0]["author"],
             "report_type": report_type,
             "reporter": re.search(REPORTER_REGEX, description).groups(0)[0] if report_type == "User Report" else "N/A",
@@ -651,7 +653,7 @@ def export_moderation_statistics(connection, after_dt = None, before_dt = None):
             "Actioning Moderator",
         ])
         writer.writerows([[
-            report["message"]["timestamp"],
+            report["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
             report["user"]["name"],
             report["report_type"],
             report["reporter"],
