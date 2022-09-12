@@ -67,6 +67,7 @@ MOD_USER_IDS = [
     "111928351798636544", # ren
     "417602648422875136", # Sean Archer
     "380314643844956160", # ToAerooNoootDynamicist
+    "873258487768039474", # RC_
 ]
 
 BOT_USER_IDS = [
