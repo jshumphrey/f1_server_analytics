@@ -425,11 +425,11 @@ def export_reaction_users(connection, channel_id, message_id, emoji_text, progre
                     any([role.upper().startswith("BANISHED") for role in member_roles])
                 ])
 
-def get_joins_leaves(connection, after_dt = None, before_dt = None):
+def get_joins_leaves(connection, after_dt = None, before_dt = None, progress_bar = True):
     '''This is a subroutine that gets all of the messages sent by Shadow in the #logs
     channel when users join or leave the server. This returns a tuple containing two dicts
     of {user_id: join/leave message} - one dict for joins, one for leaves.'''
-    messages = connection.get_channel_messages(LOGS_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt)
+    messages = connection.get_channel_messages(LOGS_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt, progress_bar = progress_bar)
     joins = {
         message["embeds"][0]["footer"]["text"].replace("User ID: ", ""): message
         for message in messages
@@ -444,10 +444,10 @@ def get_joins_leaves(connection, after_dt = None, before_dt = None):
     }
     return (joins, leaves)
 
-def get_bans(connection, after_dt = None, before_dt = None):
+def get_bans(connection, after_dt = None, before_dt = None, progress_bar = True):
     '''This is a subroutine that gets all of the messages sent by Formula One in the #f1-logs
     channel when a user is banned. This returns a dict of {user_id: ban message}.'''
-    messages = connection.get_channel_messages(F1_LOGS_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt)
+    messages = connection.get_channel_messages(F1_LOGS_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt, progress_bar = progress_bar)
     return {
         re.search(r"\*\*User:\*\*.*\(([0-9]+)\)", message["embeds"][0]["description"]).group(1): message
         for message in messages
@@ -542,9 +542,9 @@ def get_channel_emoji_usage(connection, channel_id, after_dt = None, before_dt =
 def export_bouncing_users(connection, after_dt = None, before_dt = None, progress_bar = True):
     '''This exports a CSV of data about users that "bounced" from the server:
     users that join and then quickly leave the server.'''
-    (joins, leaves) = get_joins_leaves(connection, after_dt = after_dt, before_dt = before_dt)
-    bans = get_bans(connection, after_dt = after_dt, before_dt = before_dt)
-    fan_role_grants = get_fan_role_grants(connection, after_dt = after_dt, before_dt = before_dt)
+    (joins, leaves) = get_joins_leaves(connection, after_dt = after_dt, before_dt = before_dt, progress_bar = progress_bar)
+    bans = get_bans(connection, after_dt = after_dt, before_dt = before_dt, progress_bar = progress_bar)
+    #fan_role_grants = get_fan_role_grants(connection, after_dt = after_dt, before_dt = before_dt)
     members = {member["user"]["id"]: member for member in connection.get_all_guild_members(F1_GUILD_ID)}
 
     user_events = {
@@ -552,33 +552,41 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None, progres
             "join_dt": datetime.datetime.fromisoformat(joins[user_id]["timestamp"]),
             "leave_dt": datetime.datetime.fromisoformat(leaves[user_id]["timestamp"]) if user_id in leaves else None,
             "is_banned": True if user_id in bans else None,
-            "had_fan": True if user_id in fan_role_grants else None
+            #"had_fan": True if user_id in fan_role_grants else None
         }
         for user_id in joins.keys()
     }
 
     with open("bouncing_users.csv", "w", encoding = "utf-8") as outfile:
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
-        writer.writerow(["User ID", "User Name", "User Create TS", "Join TS", ">5min Account Age?", "Leave TS", "Duration", "Verified Email?", "Fan Role?", "Banned?", "Status"])
+        writer.writerow([
+            "User ID",
+            "User Name",
+            "User Create TS",
+            "Join TS",
+            "Join Date",
+            ">5min Account Age?",
+            "Leave TS",
+            "Duration (minutes)",
+            "Verified Email?",
+            "Status",
+        ])
 
-        for user_id, events in tqdm(user_events.items(), desc = "Retrieving user data", disable = not progress_bar):
+        for user_id, events in user_events.items():
             if events["leave_dt"] and events["join_dt"] > events["leave_dt"]:
                 continue # These are basically bugged because the user left before the time window. Skip them.
 
-            user = members[user_id]["user"] if user_id in members else connection.get_user(user_id)
-
             writer.writerow([
                 user_id,
-                user["username"] + "#" + user["discriminator"],
+                f"{members[user_id]['user']['username']}#{members[user_id]['user']['discriminator']}" if user_id in members else None,
                 generate_datetime(user_id).strftime("%Y-%m-%d %H:%M:%S"),
                 events["join_dt"].strftime("%Y-%m-%d %H:%M:%S"),
+                events["join_dt"].strftime("%Y-%m-%d"),
                 "Yes" if events["join_dt"] >= generate_datetime(user_id) + datetime.timedelta(minutes = 5) else "No",
                 events["leave_dt"].strftime("%Y-%m-%d %H:%M:%S") if events["leave_dt"] else "Not Found",
-                str(events["leave_dt"] - events["join_dt"]) if events["leave_dt"] else None,
+                ((events["leave_dt"] - events["join_dt"]).total_seconds() / 60.0) if events["leave_dt"] else None,
                 "Unknown" if user_id not in members else ("No" if members[user_id]["pending"] else "Yes"),
-                "Yes" if events["had_fan"] is True else "No",
-                "Yes" if events["is_banned"] is True else "No",
-                "Banned" if events["is_banned"] else "Joined and " + ("Left" if events["leave_dt"] else "Stayed")
+                "Banned" if events["is_banned"] else "Joined and " + ("Left" if events["leave_dt"] else "Stayed"),
             ])
 
 def export_fan_eligible_users(connection):
@@ -664,9 +672,9 @@ def export_moderation_statistics(connection, after_dt = None, before_dt = None):
 if __name__ == "__main__":
     with Connection(TOKEN) as c:
         #export_reaction_users(c, ANNOUNCEMENTS_CHANNEL_ID, MOD_APPLICATION_MESSAGE_ID, "Bonk")
-        #export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2))
+        export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 8))
         #export_fan_eligible_users(c)
         #export_emoji_usage(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2), limit = 75000)
-        export_moderation_statistics(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 4))
+        #export_moderation_statistics(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 4))
         #_ = c.get_guild(F1_GUILD_ID)
         breakpoint() # pylint: disable = forgotten-debug-statement
