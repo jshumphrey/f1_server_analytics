@@ -31,6 +31,8 @@ ROLE_HIERARCHY = {
     '313677111695245312': {"name": 'F4', "rank": 7, "flag_score": 0.1},
     #'328635502792278017': {"name": 'Fan', "rank": 8, "flag_score": 0.05}, # The Fan role no longer exists
 }
+BELOW_F4_STUB_ROLE = {"name": 'None', "rank": 99, "flag_score": 0.05}
+LEFT_SERVER_STUB_ROLE = {"name": 'Left', "rank": 999, "flag_score": 0}
 
 ANNOUNCEMENTS_CHANNEL_ID = "361137849736626177"
 F1_GENERAL_CHANNEL_ID = "876046265111167016"
@@ -366,11 +368,11 @@ class Connection:
         special role objects are returned to reflect this.'''
         guild_member = user if "roles" in user else self.get_guild_member(F1_GUILD_ID, user["id"])
         if not guild_member:
-            return {"name": 'Left', "rank": 999, "flag_score": 0}
+            return LEFT_SERVER_STUB_ROLE
 
         rankable_roles = [role for role in guild_member["roles"] if role in ROLE_HIERARCHY]
         if not rankable_roles:
-            return {"name": 'None', "rank": 99, "flag_score": 0.05}
+            return BELOW_F4_STUB_ROLE
 
         return ROLE_HIERARCHY[sorted(rankable_roles, key = lambda r: ROLE_HIERARCHY[r]["rank"])[0]]
 
