@@ -34,6 +34,50 @@ ROLE_HIERARCHY = {
 BELOW_F4_STUB_ROLE = {"name": 'None', "rank": 99, "flag_score": 0.05}
 LEFT_SERVER_STUB_ROLE = {"name": 'Left', "rank": 999, "flag_score": 0}
 
+PERMISSIONS_BIT_INDICES = {
+    0: "Create Server Invite",
+    1: "Kick Members",
+    2: "Ban Members",
+    3: "Administrator",
+    4: "Manage Channels",
+    5: "Manage Server Settings",
+    6: "Add Reactions",
+    7: "View Audit Log",
+    8: "Priority Speaker",
+    9: "Share Video / Screen",
+    10: "View Channels",
+    11: "Send Messages and Create Forum Posts",
+    12: "Send Text-to-Speech Messages",
+    13: "Manage Messages",
+    14: "Embed Links",
+    15: "Attach Files",
+    16: "Read Message History",
+    17: "Mention @everyone / @here",
+    18: "Use External Emojis (if Nitro)",
+    19: "View Guild Insights",
+    20: "Connect to Voice Channels",
+    21: "Speak in Voice Channels",
+    22: "Mute Members in Voice Channels",
+    23: "Deafen Members in Voice Channels",
+    24: "Move Members Between Voice Channels",
+    25: "Use Voice Activity",
+    26: "Change Nickname",
+    27: "Manage Nicknames",
+    28: "Manage Roles",
+    29: "Manage Webhooks",
+    30: "Manage Emojis and Stickers",
+    31: "Use Application Slash Commands",
+    32: "Request to Speak in Stage Channels",
+    33: "Manage Server Events",
+    34: "Manage Threads and Forum Posts",
+    35: "Create Public Threads in Channels",
+    36: "Create Private Threads in Channels",
+    37: "Use External Stickers",
+    38: "Send Messages In Threads and Forum Posts",
+    39: "Use Embedded Activities",
+    40: "Timeout Members",
+}
+
 ANNOUNCEMENTS_CHANNEL_ID = "361137849736626177"
 F1_GENERAL_CHANNEL_ID = "876046265111167016"
 F1_DISCUSSION_CHANNEL_ID = "432208507073331201"
@@ -186,6 +230,10 @@ class Connection:
     def get_all_emoji(self, guild_id):
         '''This returns the JSON of all of the emoji for the Guild with the provided Guild ID.'''
         return self.get_guild(guild_id)["emojis"]
+
+    def get_guild_channels(self, guild_id):
+        '''This returns the JSON of all Channels for the Guild with the provided Guild ID.'''
+        return self.request_json("GET", f"/guilds/{guild_id}/channels")
 
     def get_channel(self, channel_id):
         '''This returns the JSON for the Channel with the provided Channel ID.'''
@@ -400,6 +448,58 @@ def generate_datetime(snowflake):
     '''This parses the creation datetime from a Discord [whatever] ID.
     This essentially does the reverse of generate_snowflake().'''
     return datetime.datetime.fromtimestamp(((int(snowflake) >> 22) + DISCORD_EPOCH) / 1000, tz = datetime.timezone.utc)
+
+def translate_permissions_intstring(perms_intstring):
+    '''This translates a Discord "permissions intstring" - the (potentially) large
+    integer-stored-as-a-string that represents a bunch of bitwise yes/nos for various
+    permissions - into a list of permission NAMES (via PERMISSIONS_BIT_INDICES) whose
+    bits in the integer, if represented in binary, have a value of 1.'''
+    permissions_booleans = [bool(int(x)) for x in list(format(int(perms_intstring), "b"))[::-1]]
+    enumerated_booleans = list(enumerate(permissions_booleans))
+    return [
+        PERMISSIONS_BIT_INDICES[index]
+        for (index, boolean) in enumerated_booleans
+        if boolean is True
+    ]
+
+def export_all_permissions(connection, progress_bar = True):
+    '''This exports a CSV of all of the permissions on every role and every channel
+    in the Discord server. This is primarily useful for backup/restoration purposes.'''
+    roles = {role["id"]: role for role in connection.get_roles(F1_GUILD_ID)}
+    channels = connection.get_guild_channels(F1_GUILD_ID)
+    users = {} # Will be populated with {user_id: user}
+
+    with open("permissions_export.csv", "w", encoding = "utf-8") as outfile:
+        writer = csv.writer(outfile, delimiter = ",", quotechar = '"')
+        writer.writerow(["Channel Type", "Channel", "Entity Type", "Entity", "Allow/Deny", "Permission"])
+
+        for role in roles.values():
+            writer.writerows([
+                ["Global", "N/A", "Role", role["name"], "Allow", perm_name]
+                for perm_name in translate_permissions_intstring(role["permissions"])
+            ])
+
+        for channel in tqdm(channels, desc = "Retrieving channel permissions", disable = not progress_bar):
+            for overwrite in channel["permission_overwrites"]:
+                if overwrite["type"] == 1:
+                    if overwrite["id"] not in users:
+                        users[overwrite["id"]] = connection.get_user(overwrite['id'])
+                    user = users[overwrite["id"]]
+
+                for perm_type in ["allow", "deny"]:
+                    writer.writerows([
+                        [
+                            "Category" if channel["type"] == 4 else "Channel",
+                            channel["name"],
+                            "Role" if overwrite["type"] == 0 else "User",
+                            roles[overwrite["id"]]["name"] if overwrite["type"] == 0 else f"{user['username']}#{user['discriminator']}",
+                            perm_type.title(),
+                            perm_name
+                        ]
+                        for perm_name in translate_permissions_intstring(overwrite[perm_type])
+                        if overwrite[perm_type] != "0"
+                    ])
+
 
 def export_reaction_users(connection, channel_id, message_id, emoji_text, progress_bar = True):
     '''This exports a CSV of data about users that reacted to a particular message
@@ -675,9 +775,10 @@ def export_moderation_statistics(connection, after_dt = None, before_dt = None):
 if __name__ == "__main__":
     with Connection(TOKEN) as c:
         #export_reaction_users(c, ANNOUNCEMENTS_CHANNEL_ID, MOD_APPLICATION_MESSAGE_ID, "Bonk")
-        export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 8))
+        #export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 8))
         #export_fan_eligible_users(c)
         #export_emoji_usage(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2), limit = 75000)
         #export_moderation_statistics(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 4))
+        #export_all_permissions(c)
         #_ = c.get_guild(F1_GUILD_ID)
         breakpoint() # pylint: disable = forgotten-debug-statement
