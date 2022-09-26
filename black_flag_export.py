@@ -3,6 +3,7 @@
 messages in certain channels that were reacted to with the :flag-black-1: emoji.'''
 
 import f1_server_analytics as f1sa
+import f1_server_constants as f1sc
 import argparse, csv, datetime, logging, re
 from tqdm import tqdm
 
@@ -10,13 +11,13 @@ BLACK_FLAG_EMOJI_NAME = "flag_black"
 BLACK_FLAG_EMOJI_ID = "299650191835922432"
 
 CHANNELS_TO_SEARCH = [
-    f1sa.F1_GENERAL_CHANNEL_ID,
-    f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID,
+    f1sc.F1_GENERAL_CHANNEL_ID,
+    f1sc.BLACK_FLAG_QUEUE_CHANNEL_ID,
 ]
 REPORTED_MESSAGE_CHANNELS = [
-    f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID,
-    f1sa.MODERATION_QUEUE_CHANNEL_ID,
-    f1sa.MOD_QUEUE_ARCHIVE_CHANNEL_ID,
+    f1sc.BLACK_FLAG_QUEUE_CHANNEL_ID,
+    f1sc.MODERATION_QUEUE_CHANNEL_ID,
+    f1sc.MOD_QUEUE_ARCHIVE_CHANNEL_ID,
 ]
 
 NUM_FLAGGERS_LIMIT = 5 # Maximum number of flagging users to list out. The rest will be under "and # others"
@@ -75,7 +76,7 @@ def get_flagged_messages(
     )
     logger.debug(f"Found that message IDs {', '.join(reported_message_ids)} have already been reported since {after_dt - datetime.timedelta(minutes = 5)!s}")
 
-    ignored_author_ids = [] if include_flags_on_moderator_messages else f1sa.MOD_USER_IDS + f1sa.BOT_USER_IDS
+    ignored_author_ids = [] if include_flags_on_moderator_messages else f1sc.MOD_USER_IDS + f1sc.BOT_USER_IDS
 
     # Next, sweep each of the provided channels for any messages that got black-flagged.
     flagged_messages = []
@@ -156,7 +157,7 @@ def export_flagged_messages(flagged_messages):
                     "f1-general",
                     message["id"],
                     message["timestamp"][:19].replace("T", " "),
-                    f"https://discord.com/channels/{f1sa.F1_GUILD_ID}/{f1sa.F1_GENERAL_CHANNEL_ID}/{message['id']}",
+                    f"https://discord.com/channels/{f1sc.F1_GUILD_ID}/{f1sc.F1_GENERAL_CHANNEL_ID}/{message['id']}",
                     f"{message['author']['username']}#{message['author']['discriminator']}",
                     message["author"]["id"],
                     message["author"]["highest_role"]["name"],
@@ -195,7 +196,7 @@ def post_flagged_messages(connection, flagged_messages, progress_bar = True):
                 },
                 "description": (
                     f"Sent a message in <#{message['channel_id']}> that was black-flagged. "
-                    f"[Jump to message](https://discord.com/channels/{f1sa.F1_GUILD_ID}/{message['channel_id']}/{message['id']})\n\n"
+                    f"[Jump to message](https://discord.com/channels/{f1sc.F1_GUILD_ID}/{message['channel_id']}/{message['id']})\n\n"
                     f"**Message:** {message['content']}\n\n"
                     f"**Black-flagged by:** {flagging_users}\n\n"
                     f"**Total flag score:** {round(message['flag_score'], 2)!s}: {flagging_ranks!s}"
@@ -203,7 +204,7 @@ def post_flagged_messages(connection, flagged_messages, progress_bar = True):
                 "footer": {"text": f"User ID: {message['author']['id']} - Message ID: {message['id']}"}
             }],
         }
-        connection.send_message(channel_id = f1sa.BLACK_FLAG_QUEUE_CHANNEL_ID, message_dict = message_dict)
+        connection.send_message(channel_id = f1sc.BLACK_FLAG_QUEUE_CHANNEL_ID, message_dict = message_dict)
         logger.debug(f"Successfully sent a Discord message for message ID {message['id']}")
 
 def main():

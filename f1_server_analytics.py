@@ -2,6 +2,7 @@
 '''This provides a wrapper around the Discord HTTP API to help with some common kinds of requests.
 This is designed to be importable by another script that's more tailored to a particular use-case.'''
 
+import f1_server_constants as f1sc
 import csv, datetime, dotenv, itertools, logging, os, re, requests, time # pylint: disable = unused-import
 from tqdm import tqdm
 
@@ -11,122 +12,6 @@ logger = logging.getLogger("f1discord")
 
 dotenv.load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
-
-DISCORD_EPOCH = 1420070400000
-
-URL_BASE = "https://discord.com/api/v9"
-BASE_SLEEP_DELAY = 0.5 # This is the number of seconds to sleep between requests.
-MAX_FAILURES = 5
-
-F1_GUILD_ID = "177387572505346048"
-
-FAN_ROLE_ID = "328635502792278017"
-ROLE_HIERARCHY = {
-    '177408413381165056': {"name": 'Admin', "rank": 1, "flag_score": 1.0},
-    '177408501268611073': {"name": 'Stewards', "rank": 2, "flag_score": 0.8},
-    '293845938764644352': {"name": 'Marshals', "rank": 3, "flag_score": 0.6},
-    '314910132733739009': {"name": 'F1', "rank": 4, "flag_score": 0.4},
-    '314910011358707712': {"name": 'F2', "rank": 5, "flag_score": 0.3},
-    '314909797445271564': {"name": 'F3', "rank": 6, "flag_score": 0.2},
-    '313677111695245312': {"name": 'F4', "rank": 7, "flag_score": 0.1},
-    #'328635502792278017': {"name": 'Fan', "rank": 8, "flag_score": 0.05}, # The Fan role no longer exists
-}
-BELOW_F4_STUB_ROLE = {"name": 'None', "rank": 99, "flag_score": 0.05}
-LEFT_SERVER_STUB_ROLE = {"name": 'Left', "rank": 999, "flag_score": 0}
-
-PERMISSIONS_BIT_INDICES = {
-    0: "Create Server Invite",
-    1: "Kick Members",
-    2: "Ban Members",
-    3: "Administrator",
-    4: "Manage Channels",
-    5: "Manage Server Settings",
-    6: "Add Reactions",
-    7: "View Audit Log",
-    8: "Priority Speaker",
-    9: "Share Video / Screen",
-    10: "View Channels",
-    11: "Send Messages and Create Forum Posts",
-    12: "Send Text-to-Speech Messages",
-    13: "Manage Messages",
-    14: "Embed Links",
-    15: "Attach Files",
-    16: "Read Message History",
-    17: "Mention @everyone / @here",
-    18: "Use External Emojis (if Nitro)",
-    19: "View Guild Insights",
-    20: "Connect to Voice Channels",
-    21: "Speak in Voice Channels",
-    22: "Mute Members in Voice Channels",
-    23: "Deafen Members in Voice Channels",
-    24: "Move Members Between Voice Channels",
-    25: "Use Voice Activity",
-    26: "Change Nickname",
-    27: "Manage Nicknames",
-    28: "Manage Roles",
-    29: "Manage Webhooks",
-    30: "Manage Emojis and Stickers",
-    31: "Use Application Slash Commands",
-    32: "Request to Speak in Stage Channels",
-    33: "Manage Server Events",
-    34: "Manage Threads and Forum Posts",
-    35: "Create Public Threads in Channels",
-    36: "Create Private Threads in Channels",
-    37: "Use External Stickers",
-    38: "Send Messages In Threads and Forum Posts",
-    39: "Use Embedded Activities",
-    40: "Timeout Members",
-}
-
-ANNOUNCEMENTS_CHANNEL_ID = "361137849736626177"
-F1_GENERAL_CHANNEL_ID = "876046265111167016"
-F1_DISCUSSION_CHANNEL_ID = "432208507073331201"
-F1_GRANDSTAND_CHANNEL_ID = "825702140118564905"
-PADDOCK_CLUB_CHANNEL_ID = "314949863911587840"
-OFFTRACK_CHANNEL_ID = "242392969213247500"
-SANDBOX_CHANNEL_ID = "242392574193565711"
-LOGS_CHANNEL_ID = "273927887034515457"
-F1_LOGS_CHANNEL_ID = "447397947261452288"
-BLACK_FLAG_QUEUE_CHANNEL_ID = "971819727959769148"
-MODERATION_QUEUE_CHANNEL_ID = "920333278593024071"
-MOD_QUEUE_ARCHIVE_CHANNEL_ID = "920333356250587156"
-
-SHADOW_USER_ID = "480338490639384576"
-FORMULA_ONE_USER_ID = "424900962449358848"
-LUX_USER_ID = "145582654857805825"
-
-MOD_USER_IDS = [
-    "260058592852443149", # Redacted
-    "279015734271541249", # aalpinesnow
-    "166938598405439488", # Ant
-    "265827741847257089", # Blue
-    "262840101581750274", # ciel
-    "345495533898563586", # ClickerHappy
-    "177386800304750592", # ClickerHappy's alt
-    "186051153254023168", # coco
-    "144476078377795584", # GalacticHitchHiker
-    "297975100668379136", # jonny h
-    "145582654857805825", # Lux
-    "186057699727769600", # Pjilot Willem-Alexander
-    "111928351798636544", # ren
-    "417602648422875136", # Sean Archer
-    "380314643844956160", # ToAerooNoootDynamicist
-    "873258487768039474", # RC_
-]
-
-BOT_USER_IDS = [
-    "424900962449358848", # Formula One
-    "886984180800577636", # Formula One Dev
-    "480338490639384576", # Shadow
-]
-
-MOD_APPLICATION_MESSAGE_ID = "935642010419879957"
-
-MEMBER_UPDATE_ACTION_TYPE = 24
-MEMBER_ROLE_UPDATE_ACTION_TYPE = 25
-
-REPORT_ACTION_REGEX = r"(Punished|Ignored|Banned|Escalated) by \*\*([^\s]+.+\#\d{4})\*\*"
-REPORTER_REGEX = r"\*\*Reporter\:\*\* ([^\s]+.+\#\d{4})"
 
 class Connection:
     '''This class wraps a requests Session, wraps the process of making a request via the
@@ -145,7 +30,7 @@ class Connection:
             raise EnvironmentError("No Discord token was found in the environment - Discord authentication failed!") from ex
 
         self.last_call = time.time()
-        self.sleep_delay = BASE_SLEEP_DELAY
+        self.sleep_delay = f1sc.BASE_SLEEP_DELAY
         self.test_token()
 
     def __enter__(self):
@@ -188,7 +73,7 @@ class Connection:
         while True:
             self.bucket_sleep()
             try:
-                response = self.session.request(request_type, URL_BASE + suburl, **kwargs)
+                response = self.session.request(request_type, f1sc.URL_BASE + suburl, **kwargs)
                 response.raise_for_status()
                 return response.json() # Potential exit from the function - return the JSON of a valid response
 
@@ -204,7 +89,7 @@ class Connection:
             except (requests.ConnectionError, requests.Timeout) as ex:
                 failures += 1
                 logger.debug(f"Encountered a {type(ex)} when {request_type}ing {suburl}; {failures!s} failures so far")
-                if failures >= MAX_FAILURES:
+                if failures >= f1sc.MAX_FAILURES:
                     logger.debug(f"Encountered too many ConnectionErrors or Timeouts when {request_type}ing {suburl}; crashing out")
                     raise # Potential exit from the function - crash out due to too many ConnectionErrors or Timeouts
 
@@ -333,7 +218,7 @@ class Connection:
             while True:
                 response_entries = self.request_json(
                     request_type = "GET",
-                    suburl = f"/guilds/{F1_GUILD_ID}/audit-logs",
+                    suburl = f"/guilds/{f1sc.F1_GUILD_ID}/audit-logs",
                     params = base_params | {"before": entries[-1]["id"] if entries else default_entry_id}
                 )["audit_log_entries"]
                 if not response_entries:
@@ -415,15 +300,15 @@ class Connection:
         and returns the "highest" of their roles, according to the F1 Discord server's role hierarchy.
         If the user has left the guild, or if the user does not belong to any of the ranked roles,
         special role objects are returned to reflect this.'''
-        guild_member = user if "roles" in user else self.get_guild_member(F1_GUILD_ID, user["id"])
+        guild_member = user if "roles" in user else self.get_guild_member(f1sc.F1_GUILD_ID, user["id"])
         if not guild_member:
-            return LEFT_SERVER_STUB_ROLE
+            return f1sc.LEFT_SERVER_STUB_ROLE
 
-        rankable_roles = [role for role in guild_member["roles"] if role in ROLE_HIERARCHY]
+        rankable_roles = [role for role in guild_member["roles"] if role in f1sc.ROLE_HIERARCHY]
         if not rankable_roles:
-            return BELOW_F4_STUB_ROLE
+            return f1sc.BELOW_F4_STUB_ROLE
 
-        return ROLE_HIERARCHY[sorted(rankable_roles, key = lambda r: ROLE_HIERARCHY[r]["rank"])[0]]
+        return f1sc.ROLE_HIERARCHY[sorted(rankable_roles, key = lambda r: f1sc.ROLE_HIERARCHY[r]["rank"])[0]]
 
 def generate_snowflake(input_datetime):
     '''This translates a Python datetime.datetime object into a FAKE Discord Message ID.
@@ -442,12 +327,12 @@ def generate_snowflake(input_datetime):
 
     Again, this Message ID is _not_ the ID of any _real_ message, but you _can_ use it
     as a point of reference to be able to jump to a point in time of a channel's message history.'''
-    return str(int((input_datetime.timestamp() * 1000) - DISCORD_EPOCH) << 22)
+    return str(int((input_datetime.timestamp() * 1000) - f1sc.DISCORD_EPOCH) << 22)
 
 def generate_datetime(snowflake):
     '''This parses the creation datetime from a Discord [whatever] ID.
     This essentially does the reverse of generate_snowflake().'''
-    return datetime.datetime.fromtimestamp(((int(snowflake) >> 22) + DISCORD_EPOCH) / 1000, tz = datetime.timezone.utc)
+    return datetime.datetime.fromtimestamp(((int(snowflake) >> 22) + f1sc.DISCORD_EPOCH) / 1000, tz = datetime.timezone.utc)
 
 def translate_permissions_intstring(perms_intstring):
     '''This translates a Discord "permissions intstring" - the (potentially) large
@@ -457,7 +342,7 @@ def translate_permissions_intstring(perms_intstring):
     permissions_booleans = [bool(int(x)) for x in list(format(int(perms_intstring), "b"))[::-1]]
     enumerated_booleans = list(enumerate(permissions_booleans))
     return [
-        PERMISSIONS_BIT_INDICES[index]
+        f1sc.PERMISSIONS_BIT_INDICES[index]
         for (index, boolean) in enumerated_booleans
         if boolean is True
     ]
@@ -465,8 +350,8 @@ def translate_permissions_intstring(perms_intstring):
 def export_all_permissions(connection, progress_bar = True):
     '''This exports a CSV of all of the permissions on every role and every channel
     in the Discord server. This is primarily useful for backup/restoration purposes.'''
-    roles = {role["id"]: role for role in connection.get_roles(F1_GUILD_ID)}
-    channels = connection.get_guild_channels(F1_GUILD_ID)
+    roles = {role["id"]: role for role in connection.get_roles(f1sc.F1_GUILD_ID)}
+    channels = connection.get_guild_channels(f1sc.F1_GUILD_ID)
     users = {} # Will be populated with {user_id: user}
 
     with open("permissions_export.csv", "w", encoding = "utf-8") as outfile:
@@ -500,15 +385,14 @@ def export_all_permissions(connection, progress_bar = True):
                         if overwrite[perm_type] != "0"
                     ])
 
-
 def export_reaction_users(connection, channel_id, message_id, emoji_text, progress_bar = True):
     '''This exports a CSV of data about users that reacted to a particular message
     with a particular emoji. Users that are no longer in the server are ignored.'''
-    guild_roles = connection.get_roles(F1_GUILD_ID)
+    guild_roles = connection.get_roles(f1sc.F1_GUILD_ID)
     message = connection.get_message(channel_id, message_id)
     emoji = [emoji for emoji in message["reactions"] if emoji["emoji"]["name"] == emoji_text][0]["emoji"]
     users = connection.get_reaction_users(channel_id, message_id, emoji["name"], emoji["id"])
-    members = {member["user"]["id"]: member for member in connection.get_all_guild_members(F1_GUILD_ID)}
+    members = {member["user"]["id"]: member for member in connection.get_all_guild_members(f1sc.F1_GUILD_ID)}
 
     with open("reacted_users.csv", "w", encoding = "utf-8") as outfile:
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
@@ -532,17 +416,17 @@ def get_joins_leaves(connection, after_dt = None, before_dt = None, progress_bar
     '''This is a subroutine that gets all of the messages sent by Shadow in the #logs
     channel when users join or leave the server. This returns a tuple containing two dicts
     of {user_id: join/leave message} - one dict for joins, one for leaves.'''
-    messages = connection.get_channel_messages(LOGS_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt, progress_bar = progress_bar)
+    messages = connection.get_channel_messages(f1sc.LOGS_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt, progress_bar = progress_bar)
     joins = {
         message["embeds"][0]["footer"]["text"].replace("User ID: ", ""): message
         for message in messages
-        if message["author"]["id"] == SHADOW_USER_ID
+        if message["author"]["id"] == f1sc.SHADOW_USER_ID
         and message["embeds"][0]["fields"][0]["value"] == "Joined the server"
     }
     leaves = {
         message["embeds"][0]["footer"]["text"].replace("User ID: ", ""): message
         for message in messages
-        if message["author"]["id"] == SHADOW_USER_ID
+        if message["author"]["id"] == f1sc.SHADOW_USER_ID
         and message["embeds"][0]["fields"][0]["value"] == "Left the server"
     }
     return (joins, leaves)
@@ -550,11 +434,11 @@ def get_joins_leaves(connection, after_dt = None, before_dt = None, progress_bar
 def get_bans(connection, after_dt = None, before_dt = None, progress_bar = True):
     '''This is a subroutine that gets all of the messages sent by Formula One in the #f1-logs
     channel when a user is banned. This returns a dict of {user_id: ban message}.'''
-    messages = connection.get_channel_messages(F1_LOGS_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt, progress_bar = progress_bar)
+    messages = connection.get_channel_messages(f1sc.F1_LOGS_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt, progress_bar = progress_bar)
     return {
         re.search(r"\*\*User:\*\*.*\(([0-9]+)\)", message["embeds"][0]["description"]).group(1): message
         for message in messages
-        if message["author"]["id"] == FORMULA_ONE_USER_ID
+        if message["author"]["id"] == f1sc.FORMULA_ONE_USER_ID
         and "description" in message["embeds"][0]
         and "**Action:** Ban" in message["embeds"][0]["description"]
     }
@@ -563,10 +447,10 @@ def get_reports(connection, after_dt = None, before_dt = None):
     """This is a subroutine that sweeps through the Moderation Queue Archive channel and collects
     all of the situations that were raised to the attention of the moderators, whether via
     user reports or by one of the automated message-analysis tools."""
-    messages = connection.get_channel_messages(MOD_QUEUE_ARCHIVE_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt)
+    messages = connection.get_channel_messages(f1sc.MOD_QUEUE_ARCHIVE_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt)
     report_messages = [
         message for message in messages
-        if message["author"]["id"] == FORMULA_ONE_USER_ID
+        if message["author"]["id"] == f1sc.FORMULA_ONE_USER_ID
         and message["content"] != ""
         and "embeds" in message
         and "Successfully removed" not in message["embeds"][0]["description"]
@@ -585,14 +469,14 @@ def get_reports(connection, after_dt = None, before_dt = None):
             else "Automatic Mute" if "Posted 3 or more violations" in description
             else "Unknown - " + description[:description.find(r"\n")]
         )
-        (report_status, actioning_moderator) = re.search(REPORT_ACTION_REGEX, message["content"]).groups()
+        (report_status, actioning_moderator) = re.search(f1sc.REPORT_ACTION_REGEX, message["content"]).groups()
 
         reports.append({
             "message": message,
             "timestamp": datetime.datetime.fromisoformat(message["timestamp"]),
             "user": message["embeds"][0]["author"],
             "report_type": report_type,
-            "reporter": re.search(REPORTER_REGEX, description).groups(0)[0] if report_type == "User Report" else "N/A",
+            "reporter": re.search(f1sc.REPORTER_REGEX, description).groups(0)[0] if report_type == "User Report" else "N/A",
             "report_status": report_status,
             "actioning_moderator": actioning_moderator,
         })
@@ -603,8 +487,8 @@ def get_fan_role_grants(connection, after_dt = None, before_dt = None):
     '''This is a subroutine that gets all of the times when a user was granted the Fan role
     by the Formula One bot. This returns a dict of {user_id: audit log entry}.'''
     entries = connection.get_audit_log_entries(
-        user_id = FORMULA_ONE_USER_ID,
-        action_type = MEMBER_ROLE_UPDATE_ACTION_TYPE,
+        user_id = f1sc.FORMULA_ONE_USER_ID,
+        action_type = f1sc.MEMBER_ROLE_UPDATE_ACTION_TYPE,
         before_dt = before_dt,
         after_dt = after_dt
     )
@@ -648,7 +532,7 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None, progres
     (joins, leaves) = get_joins_leaves(connection, after_dt = after_dt, before_dt = before_dt, progress_bar = progress_bar)
     bans = get_bans(connection, after_dt = after_dt, before_dt = before_dt, progress_bar = progress_bar)
     #fan_role_grants = get_fan_role_grants(connection, after_dt = after_dt, before_dt = before_dt)
-    members = {member["user"]["id"]: member for member in connection.get_all_guild_members(F1_GUILD_ID)}
+    members = {member["user"]["id"]: member for member in connection.get_all_guild_members(f1sc.F1_GUILD_ID)}
 
     user_events = {
         user_id: {
@@ -695,12 +579,12 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None, progres
 def export_fan_eligible_users(connection):
     '''This exports a CSV of data about users that are eligible to receive the Fan role,
     but have not yet been granted it.'''
-    members = connection.get_all_guild_members(F1_GUILD_ID)
-    guild_roles = connection.get_roles(F1_GUILD_ID)
+    members = connection.get_all_guild_members(f1sc.F1_GUILD_ID)
+    guild_roles = connection.get_roles(f1sc.F1_GUILD_ID)
     eligible_members = [
         member for member in members
         if not member["pending"]
-        and FAN_ROLE_ID not in member["roles"]
+        and f1sc.FAN_ROLE_ID not in member["roles"]
         and not ("bot" in member["user"] and member["user"]["bot"])
     ]
 
@@ -722,18 +606,18 @@ def export_emoji_usage(connection, after_dt = None, before_dt = None, limit = 15
     and with what frequency, over the date range provided.'''
     emoji_usage = {}
     channels_to_scan = [
-        F1_GENERAL_CHANNEL_ID,
-        F1_DISCUSSION_CHANNEL_ID,
-        F1_GRANDSTAND_CHANNEL_ID,
-        PADDOCK_CLUB_CHANNEL_ID,
-        OFFTRACK_CHANNEL_ID,
-        SANDBOX_CHANNEL_ID
+        f1sc.F1_GENERAL_CHANNEL_ID,
+        f1sc.F1_DISCUSSION_CHANNEL_ID,
+        f1sc.F1_GRANDSTAND_CHANNEL_ID,
+        f1sc.PADDOCK_CLUB_CHANNEL_ID,
+        f1sc.OFFTRACK_CHANNEL_ID,
+        f1sc.SANDBOX_CHANNEL_ID
     ]
 
     for channel_id in channels_to_scan:
         emoji_usage = emoji_usage | get_channel_emoji_usage(connection, channel_id, after_dt = after_dt, before_dt = before_dt, limit = limit)
 
-    guild_emoji = {emoji["name"]: emoji["id"] for emoji in connection.get_all_emoji(F1_GUILD_ID)}
+    guild_emoji = {emoji["name"]: emoji["id"] for emoji in connection.get_all_emoji(f1sc.F1_GUILD_ID)}
 
     with open("emoji_usage.csv", "w", encoding = "utf-8") as outfile:
         writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
