@@ -2,10 +2,10 @@
 '''This is a script that can be run on a scheduler to generate an export of
 messages in certain channels that were reacted to with the :flag-black-1: emoji.'''
 
-import f1_server_analytics as f1sa
-import f1_server_constants as f1sc
 import argparse, csv, datetime, logging, re
 from tqdm import tqdm
+import f1_server_analytics as f1sa
+import f1_server_constants as f1sc
 
 BLACK_FLAG_EMOJI_NAME = "flag_black"
 BLACK_FLAG_EMOJI_ID = "299650191835922432"

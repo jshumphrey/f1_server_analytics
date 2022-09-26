@@ -6,3 +6,4 @@ __pycache__/**
 .vscode/**
 *.service
 *.timer
+f1_server_scratchpad.py

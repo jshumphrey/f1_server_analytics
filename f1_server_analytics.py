@@ -2,9 +2,9 @@
 '''This provides a wrapper around the Discord HTTP API to help with some common kinds of requests.
 This is designed to be importable by another script that's more tailored to a particular use-case.'''
 
-import f1_server_constants as f1sc
 import csv, datetime, dotenv, itertools, logging, os, re, requests, time # pylint: disable = unused-import
 from tqdm import tqdm
+import f1_server_constants as f1sc
 
 # Configure the logger so that we have a logger object to use.
 logging.basicConfig(level = logging.INFO)
@@ -655,14 +655,3 @@ def export_moderation_statistics(connection, after_dt = None, before_dt = None):
             report["report_status"],
             report["actioning_moderator"],
         ] for report in reports])
-
-if __name__ == "__main__":
-    with Connection(TOKEN) as c:
-        #export_reaction_users(c, ANNOUNCEMENTS_CHANNEL_ID, MOD_APPLICATION_MESSAGE_ID, "Bonk")
-        #export_bouncing_users(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 8))
-        #export_fan_eligible_users(c)
-        #export_emoji_usage(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 2), limit = 75000)
-        #export_moderation_statistics(c, after_dt = datetime.datetime.today() - datetime.timedelta(weeks = 4))
-        #export_all_permissions(c)
-        #_ = c.get_guild(F1_GUILD_ID)
-        breakpoint() # pylint: disable = forgotten-debug-statement
