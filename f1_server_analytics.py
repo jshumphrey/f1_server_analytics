@@ -615,7 +615,13 @@ def export_emoji_usage(connection, after_dt = None, before_dt = None, limit = 15
     ]
 
     for channel_id in channels_to_scan:
-        emoji_usage = emoji_usage | get_channel_emoji_usage(connection, channel_id, after_dt = after_dt, before_dt = before_dt, limit = limit)
+        emoji_usage = emoji_usage | get_channel_emoji_usage(
+            connection,
+            channel_id,
+            after_dt = after_dt,
+            before_dt = before_dt,
+            limit = limit,
+        )
 
     guild_emoji = {emoji["name"]: emoji["id"] for emoji in connection.get_all_emoji(f1sc.F1_GUILD_ID)}
 

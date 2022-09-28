@@ -71,6 +71,38 @@ ROLE_HIERARCHY = {
 BELOW_F4_STUB_ROLE = {"name": 'None', "rank": 99, "flag_score": 0.05}
 LEFT_SERVER_STUB_ROLE = {"name": 'Left', "rank": 999, "flag_score": 0}
 
+MOD_ROLE_HIERARCHY = {
+    "738665034359767060": {"name": "Mods", "parent": None},
+    "293845938764644352": {"name": "Marshals", "parent": "738665034359767060"},
+    "177408501268611073": {"name": "Stewards", "parent": "293845938764644352"},
+    "177408413381165056": {"name": "Admin", "parent": "177408501268611073"},
+}
+
+FX_ROLE_HIERARCHY = {
+    "313677111695245312": {"name": "F4", "parent": None},
+    "314909797445271564": {"name": "F3", "parent": "313677111695245312"},
+    "314910011358707712": {"name": "F2", "parent": "314909797445271564"},
+    "314910132733739009": {"name": "F1", "parent": "314910011358707712"},
+}
+
+BOT_ROLE_HIERARCHY = {
+    "314149392154099723": {"name": "Race Control", "parent": None},
+    "815645733335466055": {"name": "AltDentifier", "parent": "314149392154099723"},
+    "797806526814748703": {"name": "AutoChat", "parent": "314149392154099723"},
+    "1019255486312366124": {"name": "CaptchaBot", "parent": "314149392154099723"},
+    "186151513993904128": {"name": "DSL", "parent": "314149392154099723"},
+    "358676319933956096": {"name": "F1Bot", "parent": "314149392154099723"},
+    "916293989156683808": {"name": "FIA-Docs-Bot", "parent": "314149392154099723"},
+    "424905605975638016": {"name": "Formula One", "parent": "314149392154099723"},
+    "887262634129379329": {"name": "Formula One Dev", "parent": "314149392154099723"},
+    "273927785888612352": {"name": "Dyno", "parent": "314149392154099723"},
+    "313599237466357760": {"name": "MEE6", "parent": "314149392154099723"},
+    "797165462399746119": {"name": "ModMail", "parent": "314149392154099723"},
+    "243747282036588544": {"name": "Ross Brawn", "parent": "314149392154099723"},
+    "483289659036794890": {"name": "Shadow", "parent": "314149392154099723"},
+    "631109204882751515": {"name": "Discord Server List", "parent": "314149392154099723"},
+}
+
 # Other
 MOD_APPLICATION_MESSAGE_ID = "935642010419879957"
 MEMBER_UPDATE_ACTION_TYPE = 24
