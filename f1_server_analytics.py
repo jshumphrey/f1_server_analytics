@@ -2,7 +2,8 @@
 '''This provides a wrapper around the Discord HTTP API to help with some common kinds of requests.
 This is designed to be importable by another script that's more tailored to a particular use-case.'''
 
-import csv, datetime, dotenv, itertools, logging, os, re, requests, time # pylint: disable = unused-import
+import csv, datetime, itertools, logging, os, re, time
+import dotenv, requests
 from tqdm import tqdm
 import f1_server_constants as f1sc
 
