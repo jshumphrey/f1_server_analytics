@@ -7,3 +7,4 @@ __pycache__/**
 *.service
 *.timer
 f1_server_scratchpad.py
+/permissions_archive

@@ -2,23 +2,27 @@
 '''This provides a wrapper around the Discord HTTP API to help with some common kinds of requests.
 This is designed to be importable by another script that's more tailored to a particular use-case.'''
 
-import csv, datetime, itertools, logging, os, re, time
+import csv, datetime, itertools, logging, os, re, time, typing
 import dotenv, requests
 from tqdm import tqdm
+from typing import Optional
 import f1_server_constants as f1sc
+
+# Type aliases
+Snowflake = str
 
 # Configure the logger so that we have a logger object to use.
 logging.basicConfig(level = logging.INFO)
 logger = logging.getLogger("f1discord")
 
 dotenv.load_dotenv()
-TOKEN = os.getenv("DISCORD_TOKEN")
+TOKEN = typing.cast(str, os.getenv("DISCORD_TOKEN"))
 
 class Connection:
     '''This class wraps a requests Session, wraps the process of making a request via the
     Discord API (handling rate limits, etc.), and includes a number of methods that
     wrap some common individual requests.'''
-    def __init__(self, token):
+    def __init__(self, token: str) -> None:
         self.session = requests.Session()
 
         try:
@@ -34,24 +38,24 @@ class Connection:
         self.sleep_delay = f1sc.BASE_SLEEP_DELAY
         self.test_token()
 
-    def __enter__(self):
+    def __enter__(self) -> "Connection":
         return self
 
-    def __exit__(self, exception_type, exception_value, traceback):
+    def __exit__(self, exception_type, exception_value, traceback) -> None:
         '''This automatically closes the connection once the with/as is released.'''
         self.session.close()
 
-    def test_token(self):
+    def test_token(self) -> None:
         '''This "tests" the token by trying to make a very simple request (requesting
         information about our own user). If this request fails, we know that the token
         is not valid, and the user needs to fix this before trying again.'''
         try:
-            self.get_self()
+            self.get_self_user()
             logger.debug("Successfully retrieved data using the provided token!")
         except requests.HTTPError as ex:
             raise EnvironmentError("The token provided is not valid - Discord authentication failed!") from ex
 
-    def bucket_sleep(self):
+    def bucket_sleep(self) -> None:
         '''This sleeps the script for the appropriate amount of time to avoid issues
         with the Discord rate limiter. Discord's rate limits are not actually static,
         so we might still hit the limiter (which is handled separately), but by baking
@@ -65,7 +69,12 @@ class Connection:
         else:
             logger.debug(f"It's been {time_since_last_call!s} seconds since the last call, no need to sleep")
 
-    def request_json(self, request_type, suburl, **kwargs):
+    def request_json(
+        self,
+        request_type: str,
+        suburl: str,
+        **kwargs
+    ):
         '''This wraps the process of making a request to a given URL, handling errors,
         and sleeping for the appropriate amount of time to avoid rate limits.
         If/when we receive a valid response, its JSON is returned.'''
@@ -97,35 +106,42 @@ class Connection:
             finally:
                 self.last_call = time.time()
 
-    def get_self(self):
+    def get_self_user(self) -> dict:
         '''This returns the JSON for the User associated to the current Connection.'''
         return self.request_json("GET", "/users/@me")
 
-    def get_guild(self, guild_id):
+    def get_guild(self, guild_id: Snowflake) -> dict:
         '''This returns the JSON for the Guild with the provided Guild ID.'''
         return self.request_json("GET", f"/guilds/{guild_id}")
 
-    def get_guild_preview(self, guild_id):
+    def get_guild_preview(self, guild_id: Snowflake) -> dict:
         '''This returns the JSON for the Guild Preview with the provided Guild ID.'''
         return self.request_json("GET", f"/guilds/{guild_id}/preview")
 
-    def get_roles(self, guild_id):
+    def get_roles(self, guild_id: Snowflake) -> list[dict]:
         '''This returns the JSON of the Roles for the Guild with the provided Guild ID.'''
         return self.request_json("GET", f"/guilds/{guild_id}/roles")
 
-    def get_all_emoji(self, guild_id):
+    def get_all_emoji(self, guild_id: Snowflake) -> list[dict]:
         '''This returns the JSON of all of the emoji for the Guild with the provided Guild ID.'''
         return self.get_guild(guild_id)["emojis"]
 
-    def get_guild_channels(self, guild_id):
+    def get_guild_channels(self, guild_id: Snowflake) -> list[dict]:
         '''This returns the JSON of all Channels for the Guild with the provided Guild ID.'''
         return self.request_json("GET", f"/guilds/{guild_id}/channels")
 
-    def get_channel(self, channel_id):
+    def get_channel(self, channel_id: Snowflake) -> dict:
         '''This returns the JSON for the Channel with the provided Channel ID.'''
         return self.request_json("GET", f"/channels/{channel_id}")
 
-    def get_channel_messages(self, channel_id, after_dt = None, before_dt = None, limit = 15000, progress_bar = True):
+    def get_channel_messages(
+        self,
+        channel_id: Snowflake,
+        after_dt: Optional[datetime.datetime] = None,
+        before_dt: Optional[datetime.datetime] = None,
+        limit = 15000,
+        progress_bar: bool = True
+    ) -> list[dict]:
         '''This returns the JSON of messages sent in the channel with the provided Channel ID,
         up to the number of messages in the "limit" argument.
 
@@ -164,20 +180,28 @@ class Connection:
                     if limit and len(messages) >= limit:
                         return messages # We've hit our limit of messages to pull; return the list
 
-    def get_message(self, channel_id, message_id):
+    def get_message(self, channel_id: Snowflake, message_id: Snowflake) -> dict:
         '''This returns the JSON for the Message with the provided Message ID.'''
         return self.request_json("GET", f"/channels/{channel_id}/messages/{message_id}")
 
-    def send_message(self, channel_id, message_dict):
+    def send_message(self, channel_id: Snowflake, message_dict: dict) -> None:
         '''This creates and sends a message in the channel with the provided Channel ID.'''
-        return self.request_json("POST", f"/channels/{channel_id}/messages", json = message_dict)
+        self.request_json("POST", f"/channels/{channel_id}/messages", json = message_dict)
 
-    def delete_message(self, channel_id, message_id):
+    def delete_message(self, channel_id: Snowflake, message_id: Snowflake) -> None:
         '''This deletes the the Message with the provided Message ID. Remember
         that you need the Manage Message permission in the channel to do this!'''
-        return self.request_json("DELETE", f"/channels/{channel_id}/messages/{message_id}")
+        self.request_json("DELETE", f"/channels/{channel_id}/messages/{message_id}")
 
-    def get_reacted_messages(self, channel_id, emoji_text, before_dt = None, after_dt = None, limit = 75000, progress_bar = True):
+    def get_reacted_messages(
+        self,
+        channel_id: Snowflake,
+        emoji_text: str,
+        before_dt: Optional[datetime.datetime] = None,
+        after_dt: Optional[datetime.datetime] = None,
+        limit: int = 75000,
+        progress_bar: bool = True
+    ) -> list[dict]:
         '''This retrieves all messages in a given channel that are reacted to with the provided emoji_text.
 
         If the "before" or "after" arguments are provided (or both), only the messages before
@@ -190,7 +214,15 @@ class Connection:
             and any([reaction["emoji"]["name"] == emoji_text for reaction in message["reactions"]])
         ]
 
-    def get_audit_log_entries(self, user_id = None, action_type = None, after_dt = None, before_dt = None, limit = 15000, progress_bar = True):
+    def get_audit_log_entries(
+        self,
+        user_id: Optional[str] = None,
+        action_type = None,
+        after_dt: Optional[datetime.datetime] = None,
+        before_dt: Optional[datetime.datetime] = None,
+        limit: int = 15000,
+        progress_bar: bool = True
+    ) -> list[dict]:
         '''This returns the JSON of audit log entries created by the user with the provided User ID,
         (or by all users, if no user ID is provided), of the provided action type (or all action types,
         if no action type is provided), up to the number of entries in the "limit" argument.
@@ -236,7 +268,14 @@ class Connection:
                     if len(entries) >= limit:
                         return entries # We've hit our limit of entries to pull; return the list
 
-    def get_reaction_users(self, channel_id, message_id, emoji_name, emoji_id, progress_bar = True):
+    def get_reaction_users(
+        self,
+        channel_id: Snowflake,
+        message_id: Snowflake,
+        emoji_name: str,
+        emoji_id: Snowflake,
+        progress_bar: bool = True
+    ) -> list[dict]:
         '''This returns a list of User JSONs that reacted to the given message.
         Discord requires that we paginate through the users since we have a limit
         of 100 reacting users at a time, so we need to provide a User ID to pull
@@ -261,11 +300,11 @@ class Connection:
                 else:
                     return users
 
-    def get_user(self, user_id):
+    def get_user(self, user_id: Snowflake) -> dict:
         '''This returns the JSON for the user with the provided User ID.'''
         return self.request_json("GET", f"/users/{user_id}")
 
-    def get_guild_member(self, guild_id, user_id):
+    def get_guild_member(self, guild_id: Snowflake, user_id: Snowflake) -> dict | None:
         '''This takes in a User ID and returns the full Guild Member data
         for that user, including their join date, roles, etc.
         This returns None if the member is no longer part of the Guild.'''
@@ -277,7 +316,7 @@ class Connection:
             else:
                 raise ex
 
-    def get_all_guild_members(self, guild_id, progress_bar = True):
+    def get_all_guild_members(self, guild_id: Snowflake, progress_bar: bool = True) -> list[dict]:
         '''This returns a list with the JSON of all members of the guild with the provided Guild ID.'''
         members = []
         num_members = self.get_guild_preview(guild_id)["approximate_member_count"]
@@ -296,7 +335,7 @@ class Connection:
                 members += response_members
                 pbar.update(len(response_members))
 
-    def get_highest_role(self, user):
+    def get_highest_role(self, user: dict) -> dict:
         '''This takes in a user (you can also pass a full guild member object to save an API call)
         and returns the "highest" of their roles, according to the F1 Discord server's role hierarchy.
         If the user has left the guild, or if the user does not belong to any of the ranked roles,
@@ -311,7 +350,7 @@ class Connection:
 
         return f1sc.ROLE_HIERARCHY[sorted(rankable_roles, key = lambda r: f1sc.ROLE_HIERARCHY[r]["rank"])[0]]
 
-def generate_snowflake(input_datetime):
+def generate_snowflake(input_datetime: datetime.datetime) -> str:
     '''This translates a Python datetime.datetime object into a FAKE Discord Message ID.
     This Message ID is one that would have been sent at the datetime provided.
 
@@ -330,12 +369,12 @@ def generate_snowflake(input_datetime):
     as a point of reference to be able to jump to a point in time of a channel's message history.'''
     return str(int((input_datetime.timestamp() * 1000) - f1sc.DISCORD_EPOCH) << 22)
 
-def generate_datetime(snowflake):
+def generate_datetime(snowflake: Snowflake) -> datetime.datetime:
     '''This parses the creation datetime from a Discord [whatever] ID.
     This essentially does the reverse of generate_snowflake().'''
     return datetime.datetime.fromtimestamp(((int(snowflake) >> 22) + f1sc.DISCORD_EPOCH) / 1000, tz = datetime.timezone.utc)
 
-def translate_permissions_intstring(perms_intstring):
+def translate_permissions_intstring(perms_intstring: str) -> list[str]:
     '''This translates a Discord "permissions intstring" - the (potentially) large
     integer-stored-as-a-string that represents a bunch of bitwise yes/nos for various
     permissions - into a list of permission NAMES (via PERMISSIONS_BIT_INDICES) whose
@@ -346,9 +385,10 @@ def translate_permissions_intstring(perms_intstring):
         f1sc.PERMISSIONS_BIT_INDICES[index]
         for (index, boolean) in enumerated_booleans
         if boolean is True
+        and index in f1sc.PERMISSIONS_BIT_INDICES
     ]
 
-def export_all_permissions(connection, progress_bar = True):
+def export_all_permissions(connection: Connection, progress_bar: bool = True) -> None:
     '''This exports a CSV of all of the permissions on every role and every channel
     in the Discord server. This is primarily useful for backup/restoration purposes.'''
     roles = {role["id"]: role for role in connection.get_roles(f1sc.F1_GUILD_ID)}
@@ -378,7 +418,7 @@ def export_all_permissions(connection, progress_bar = True):
                             "Category" if channel["type"] == 4 else "Channel",
                             channel["name"],
                             "Role" if overwrite["type"] == 0 else "User",
-                            roles[overwrite["id"]]["name"] if overwrite["type"] == 0 else f"{user['username']}#{user['discriminator']}",
+                            roles[overwrite["id"]]["name"] if overwrite["type"] == 0 else f"{user['username']}#{user['discriminator']}", # type: ignore
                             perm_type.title(),
                             perm_name
                         ]
@@ -386,7 +426,13 @@ def export_all_permissions(connection, progress_bar = True):
                         if overwrite[perm_type] != "0"
                     ])
 
-def export_reaction_users(connection, channel_id, message_id, emoji_text, progress_bar = True):
+def export_reaction_users(
+    connection: Connection,
+    channel_id: Snowflake,
+    message_id: Snowflake,
+    emoji_text: str,
+    progress_bar: bool = True
+) -> None:
     '''This exports a CSV of data about users that reacted to a particular message
     with a particular emoji. Users that are no longer in the server are ignored.'''
     guild_roles = connection.get_roles(f1sc.F1_GUILD_ID)
@@ -413,7 +459,12 @@ def export_reaction_users(connection, channel_id, message_id, emoji_text, progre
                     any([role.upper().startswith("BANISHED") for role in member_roles])
                 ])
 
-def get_joins_leaves(connection, after_dt = None, before_dt = None, progress_bar = True):
+def get_joins_leaves(
+    connection: Connection,
+    after_dt: Optional[datetime.datetime] = None,
+    before_dt: Optional[datetime.datetime] = None,
+    progress_bar: bool = True
+) -> tuple[dict, dict]:
     '''This is a subroutine that gets all of the messages sent by Shadow in the #logs
     channel when users join or leave the server. This returns a tuple containing two dicts
     of {user_id: join/leave message} - one dict for joins, one for leaves.'''
@@ -432,19 +483,28 @@ def get_joins_leaves(connection, after_dt = None, before_dt = None, progress_bar
     }
     return (joins, leaves)
 
-def get_bans(connection, after_dt = None, before_dt = None, progress_bar = True):
+def get_bans(
+    connection: Connection,
+    after_dt: Optional[datetime.datetime] = None,
+    before_dt: Optional[datetime.datetime] = None,
+    progress_bar: bool = True
+) -> dict:
     '''This is a subroutine that gets all of the messages sent by Formula One in the #f1-logs
     channel when a user is banned. This returns a dict of {user_id: ban message}.'''
     messages = connection.get_channel_messages(f1sc.F1_LOGS_CHANNEL_ID, after_dt = after_dt, before_dt = before_dt, progress_bar = progress_bar)
     return {
-        re.search(r"\*\*User:\*\*.*\(([0-9]+)\)", message["embeds"][0]["description"]).group(1): message
+        re.search(r"\*\*User:\*\*.*\(([0-9]+)\)", message["embeds"][0]["description"]).group(1): message # type: ignore
         for message in messages
         if message["author"]["id"] == f1sc.FORMULA_ONE_USER_ID
         and "description" in message["embeds"][0]
         and "**Action:** Ban" in message["embeds"][0]["description"]
     }
 
-def get_reports(connection, after_dt = None, before_dt = None):
+def get_reports(
+    connection: Connection,
+    after_dt: Optional[datetime.datetime] = None,
+    before_dt: Optional[datetime.datetime] = None
+) -> list[dict]:
     """This is a subroutine that sweeps through the Moderation Queue Archive channel and collects
     all of the situations that were raised to the attention of the moderators, whether via
     user reports or by one of the automated message-analysis tools."""
@@ -470,21 +530,25 @@ def get_reports(connection, after_dt = None, before_dt = None):
             else "Automatic Mute" if "Posted 3 or more violations" in description
             else "Unknown - " + description[:description.find(r"\n")]
         )
-        (report_status, actioning_moderator) = re.search(f1sc.REPORT_ACTION_REGEX, message["content"]).groups()
+        (report_status, actioning_moderator) = re.search(f1sc.REPORT_ACTION_REGEX, message["content"]).groups() # type: ignore
 
         reports.append({
             "message": message,
             "timestamp": datetime.datetime.fromisoformat(message["timestamp"]),
             "user": message["embeds"][0]["author"],
             "report_type": report_type,
-            "reporter": re.search(f1sc.REPORTER_REGEX, description).groups(0)[0] if report_type == "User Report" else "N/A",
+            "reporter": re.search(f1sc.REPORTER_REGEX, description).groups(0)[0] if report_type == "User Report" else "N/A", # type: ignore
             "report_status": report_status,
             "actioning_moderator": actioning_moderator,
         })
 
     return reports
 
-def get_fan_role_grants(connection, after_dt = None, before_dt = None):
+def get_fan_role_grants(
+    connection: Connection,
+    after_dt: Optional[datetime.datetime] = None,
+    before_dt: Optional[datetime.datetime] = None
+) -> dict:
     '''This is a subroutine that gets all of the times when a user was granted the Fan role
     by the Formula One bot. This returns a dict of {user_id: audit log entry}.'''
     entries = connection.get_audit_log_entries(
@@ -500,7 +564,13 @@ def get_fan_role_grants(connection, after_dt = None, before_dt = None):
         and entry["changes"][0]["new_value"][0]["name"] == "Fan"
     }
 
-def get_channel_emoji_usage(connection, channel_id, after_dt = None, before_dt = None, limit = 15000):
+def get_channel_emoji_usage(
+    connection: Connection,
+    channel_id: Snowflake,
+    after_dt: Optional[datetime.datetime] = None,
+    before_dt: Optional[datetime.datetime] = None,
+    limit: int = 15000
+) -> dict[str, dict]:
     '''This returns a dictionary of emoji usage in the specified channel, in the specified time range.
     The dictionary is: {channel_name: {emoji_text: {"messages": int, "reactions": int}}}'''
     channel = connection.get_channel(channel_id)
@@ -527,12 +597,17 @@ def get_channel_emoji_usage(connection, channel_id, after_dt = None, before_dt =
 
     return {channel["name"]: output_emoji}
 
-def export_bouncing_users(connection, after_dt = None, before_dt = None, progress_bar = True):
+def export_bouncing_users(
+    connection: Connection,
+    after_dt: Optional[datetime.datetime] = None,
+    before_dt: Optional[datetime.datetime] = None,
+    progress_bar: bool = True
+) -> None:
     '''This exports a CSV of data about users that "bounced" from the server:
     users that join and then quickly leave the server.'''
     (joins, leaves) = get_joins_leaves(connection, after_dt = after_dt, before_dt = before_dt, progress_bar = progress_bar)
     bans = get_bans(connection, after_dt = after_dt, before_dt = before_dt, progress_bar = progress_bar)
-    #fan_role_grants = get_fan_role_grants(connection, after_dt = after_dt, before_dt = before_dt)
+    #fan_role_grants = get_fan_role_grants(connection: Connection, after_dt = after_dt, before_dt = before_dt)
     members = {member["user"]["id"]: member for member in connection.get_all_guild_members(f1sc.F1_GUILD_ID)}
 
     user_events = {
@@ -577,7 +652,7 @@ def export_bouncing_users(connection, after_dt = None, before_dt = None, progres
                 "Banned" if events["is_banned"] else "Joined and " + ("Left" if events["leave_dt"] else "Stayed"),
             ])
 
-def export_fan_eligible_users(connection):
+def export_fan_eligible_users(connection: Connection) -> None:
     '''This exports a CSV of data about users that are eligible to receive the Fan role,
     but have not yet been granted it.'''
     members = connection.get_all_guild_members(f1sc.F1_GUILD_ID)
@@ -602,7 +677,12 @@ def export_fan_eligible_users(connection):
                 ", ".join([gr["name"] for gr in guild_roles if gr["id"] in member["roles"]])
             ])
 
-def export_emoji_usage(connection, after_dt = None, before_dt = None, limit = 15000):
+def export_emoji_usage(
+    connection: Connection,
+    after_dt: Optional[datetime.datetime] = None,
+    before_dt: Optional[datetime.datetime] = None,
+    limit: int = 15000
+) -> None:
     '''This exports a CSV of data about which emoji were used, in which channels,
     and with what frequency, over the date range provided.'''
     emoji_usage = {}
@@ -634,13 +714,17 @@ def export_emoji_usage(connection, after_dt = None, before_dt = None, limit = 15
                 if emoji in guild_emoji:
                     writer.writerow([emoji, channel, emoji_dict["messages"], emoji_dict["reactions"]])
 
-    all_used_emoji = list(itertools.chain.from_iterable([emojis.keys() for channel, emojis in emoji_usage.items()]))
+    all_used_emoji = list(itertools.chain.from_iterable([emojis.keys() for _, emojis in emoji_usage.items()]))
     unused_emoji = sorted([emoji for emoji in guild_emoji.keys() if emoji not in all_used_emoji])
 
     with open("unused_emoji.csv", "w", encoding = "utf-8") as outfile:
         outfile.write("\n".join(["Emoji Name"] + unused_emoji))
 
-def export_moderation_statistics(connection, after_dt = None, before_dt = None):
+def export_moderation_statistics(
+    connection: Connection,
+    after_dt: Optional[datetime.datetime] = None,
+    before_dt: Optional[datetime.datetime] = None
+) -> None:
     """This exports a CSV of information about moderation action taken on
     the reported messages in the specified timeframe """
     reports = get_reports(connection, after_dt = after_dt, before_dt = before_dt)
@@ -662,3 +746,39 @@ def export_moderation_statistics(connection, after_dt = None, before_dt = None):
             report["report_status"],
             report["actioning_moderator"],
         ] for report in reports])
+
+def export_all_members(connection: Connection) -> None:
+    """This exports a CSV of all server members."""
+    members = connection.get_all_guild_members(f1sc.F1_GUILD_ID)
+    with open("members.csv", "w", encoding = "utf-8") as outfile:
+        writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
+        writer.writerow(["User ID", "User Name", "Highest FX Role"])
+
+        for member in members:
+            writer.writerow([
+                member["user"]["id"],
+                member["user"]["username"] + "#" + member["user"]["discriminator"],
+                connection.get_highest_role(member)["name"]
+            ])
+
+def export_member_roles(connection: Connection) -> None:
+    """This exports a CSV of all roles held by all members in the server."""
+    roles_dict = {role["id"]: role for role in connection.get_roles(f1sc.F1_GUILD_ID)}
+    members = connection.get_all_guild_members(f1sc.F1_GUILD_ID)
+
+    with open("member_roles.csv", "w", encoding = "utf-8") as outfile:
+        writer = csv.writer(outfile, delimiter = ',', quotechar = '"')
+        writer.writerow(["User ID", "User Name", "Role ID", "Role Name"])
+
+        for member in members:
+            if member["roles"] == []:
+                continue
+
+            for role_id in member["roles"]:
+                if role_id in roles_dict:
+                    writer.writerow([
+                        member["user"]["id"],
+                        member["user"]["username"] + "#" + member["user"]["discriminator"],
+                        role_id,
+                        roles_dict[role_id]["name"],
+                    ])
