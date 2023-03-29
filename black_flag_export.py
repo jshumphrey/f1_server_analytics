@@ -129,7 +129,7 @@ def get_reported_message_ids(connection, channel_ids, after_dt, progress_bar = T
         if "embeds" in message # Don't trigger on a normal message
         and message["embeds"] # Really, don't trigger on a normal message, even if it has an embed
         and "footer" in message["embeds"][0] # Seriously, actually, only trigger on the messages for reports
-        and (match := re.search(r'Message ID: ([0-9]+)', message["embeds"][0]["footer"]["text"]).group(1))
+        and (match := re.search(r'Message ID: ([0-9]+)', message["embeds"][0]["footer"]["text"]).group(1)) # type: ignore
     ]
 
 def export_flagged_messages(flagged_messages):

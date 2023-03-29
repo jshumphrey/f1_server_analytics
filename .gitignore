@@ -7,4 +7,5 @@ __pycache__/**
 *.service
 *.timer
 f1_server_scratchpad.py
+polaris_safety_check.py
 /permissions_archive

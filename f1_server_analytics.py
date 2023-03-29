@@ -2,7 +2,7 @@
 '''This provides a wrapper around the Discord HTTP API to help with some common kinds of requests.
 This is designed to be importable by another script that's more tailored to a particular use-case.'''
 
-import csv, datetime, itertools, logging, os, re, time, typing
+import csv, copy, datetime, itertools, logging, os, re, time, typing
 import dotenv, requests
 from tqdm import tqdm
 from typing import Optional
@@ -350,6 +350,14 @@ class Connection:
 
         return f1sc.ROLE_HIERARCHY[sorted(rankable_roles, key = lambda r: f1sc.ROLE_HIERARCHY[r]["rank"])[0]]
 
+def pprint_user_name(user: dict) -> str:
+    """This is a really simple method that generates the "pretty-printed"
+    user_name#user_discriminator from a user object so that you don't have
+    to rewrite and rewrite that one-liner every time you need it."""
+    if "user" in user: # This is a guild member, not a user
+        user = user["user"]
+    return f"{user['username']}#{user['discriminator']}"
+
 def generate_snowflake(input_datetime: datetime.datetime) -> str:
     '''This translates a Python datetime.datetime object into a FAKE Discord Message ID.
     This Message ID is one that would have been sent at the datetime provided.
@@ -374,57 +382,229 @@ def generate_datetime(snowflake: Snowflake) -> datetime.datetime:
     This essentially does the reverse of generate_snowflake().'''
     return datetime.datetime.fromtimestamp(((int(snowflake) >> 22) + f1sc.DISCORD_EPOCH) / 1000, tz = datetime.timezone.utc)
 
-def translate_permissions_intstring(perms_intstring: str) -> list[str]:
+def translate_permissions_intstring(perms_intstring: str) -> set[str]:
     '''This translates a Discord "permissions intstring" - the (potentially) large
     integer-stored-as-a-string that represents a bunch of bitwise yes/nos for various
     permissions - into a list of permission NAMES (via PERMISSIONS_BIT_INDICES) whose
     bits in the integer, if represented in binary, have a value of 1.'''
     permissions_booleans = [bool(int(x)) for x in list(format(int(perms_intstring), "b"))[::-1]]
     enumerated_booleans = list(enumerate(permissions_booleans))
-    return [
+    return {
         f1sc.PERMISSIONS_BIT_INDICES[index]
         for (index, boolean) in enumerated_booleans
         if boolean is True
         and index in f1sc.PERMISSIONS_BIT_INDICES
-    ]
+    }
 
 def export_all_permissions(connection: Connection, progress_bar: bool = True) -> None:
     '''This exports a CSV of all of the permissions on every role and every channel
     in the Discord server. This is primarily useful for backup/restoration purposes.'''
-    roles = {role["id"]: role for role in connection.get_roles(f1sc.F1_GUILD_ID)}
-    channels = connection.get_guild_channels(f1sc.F1_GUILD_ID)
+
+    # Retrieve all of the roles and set up the role parentage for each one.
+    roles = {
+        role["id"]: {
+            "id": role["id"],
+            "name": role["name"],
+            "permissions_intstring": role["permissions"],
+            "permission_names": translate_permissions_intstring(role["permissions"]),
+        }
+        for role in connection.get_roles(f1sc.F1_GUILD_ID)
+    }
+    everyone_role = roles[f1sc.EVERYONE_ROLE_ID]
+    role_hierarchy = f1sc.MOD_ROLE_HIERARCHY | f1sc.FX_ROLE_HIERARCHY | f1sc.BOT_ROLE_HIERARCHY
+
+    for role in roles.values():
+        if role["id"] == f1sc.EVERYONE_ROLE_ID:
+            role["parent_roles"] = [] # Special case; no parent for @everyone
+        elif role["id"] not in role_hierarchy:
+            role["parent_roles"] = [everyone_role]
+        else:
+            role["parent_roles"] = [roles[role_hierarchy[role["id"]]["parent"]]]
+            while (parent_role_id := role["parent_roles"][-1]["id"]) in role_hierarchy:
+                role["parent_roles"].append(roles[role_hierarchy[parent_role_id]["parent"]])
+
+    # Retrieve all of the channels and organize them
+    channels = {
+        channel["id"]: {
+            "id": channel["id"],
+            "name": channel["name"],
+            "type": channel["type"],
+            "parent_id": channel["parent_id"] if "parent_id" in channel else None,
+            "role_allows": {} if "permission_overwrites" not in channel else {
+                po["id"]: translate_permissions_intstring(po["allow"])
+                for po in channel["permission_overwrites"]
+                if po["type"] == 0
+                and int(po["allow"]) != 0
+            },
+            "role_denies": {} if "permission_overwrites" not in channel else {
+                po["id"]: translate_permissions_intstring(po["deny"])
+                for po in channel["permission_overwrites"]
+                if po["type"] == 0
+                and int(po["deny"]) != 0
+            },
+            "user_allows": {} if "permission_overwrites" not in channel else {
+                po["id"]: translate_permissions_intstring(po["allow"])
+                for po in channel["permission_overwrites"]
+                if po["type"] == 1
+                and int(po["allow"]) != 0
+            },
+            "user_denies": {} if "permission_overwrites" not in channel else {
+                po["id"]: translate_permissions_intstring(po["deny"])
+                for po in channel["permission_overwrites"]
+                if po["type"] == 1
+                and int(po["deny"]) != 0
+            },
+        }
+        for channel in connection.get_guild_channels(f1sc.F1_GUILD_ID)
+        if not ("parent_id" in channel and channel["parent_id"] in [
+            "360771367274283019", # Voice category - something weird is going on here, exclude for now
+            "797482862860697611", # Modmail category - channel perms here get set by the bot, so don't bother
+        ])
+    }
+
+    # Retrieve data about the users that have user-specific permission overwrites.
+    overwrite_user_ids = { # Creates a (distinct) set of all user IDs with overwrites
+        user_id
+        for channel in channels.values()
+        for user_id in set(list(channel["user_allows"]) + list(channel["user_denies"]))
+    }
+
     users = {} # Will be populated with {user_id: user}
+    for user_id in tqdm(overwrite_user_ids, desc = "Retrieving user information", disable = not progress_bar):
+        users[user_id] = connection.get_guild_member(guild_id = f1sc.F1_GUILD_ID, user_id = user_id)
 
+    # Open the output file and start actually processing the entities.
     with open("permissions_export.csv", "w", encoding = "utf-8") as outfile:
-        writer = csv.writer(outfile, delimiter = ",", quotechar = '"')
-        writer.writerow(["Channel Type", "Channel", "Entity Type", "Entity", "Allow/Deny", "Permission"])
+        writer = csv.DictWriter(outfile, delimiter = ",", quotechar = '"', fieldnames = [
+            "Channel Type", "Channel Name", "Entity Type", "Entity Name",
+            "Allow/Deny", "Permission", "Necessary?", "Notes",
+        ])
+        writer.writeheader()
 
+        # Process all global role permissions.
         for role in roles.values():
-            writer.writerows([
-                ["Global", "N/A", "Role", role["name"], "Allow", perm_name]
-                for perm_name in translate_permissions_intstring(role["permissions"])
-            ])
+            for perm_name in role["permission_names"]:
+                necessary = ("Yes", "")
+                for parent_role in role["parent_roles"]:
+                    if perm_name in parent_role["permission_names"]:
+                        necessary = ("No", f"Already allowed by parent role {parent_role['name']}")
+                        break
 
-        for channel in tqdm(channels, desc = "Retrieving channel permissions", disable = not progress_bar):
-            for overwrite in channel["permission_overwrites"]:
-                if overwrite["type"] == 1:
-                    if overwrite["id"] not in users:
-                        users[overwrite["id"]] = connection.get_user(overwrite['id'])
-                    user = users[overwrite["id"]]
+                writer.writerow({
+                    "Channel Type": "Global",
+                    "Channel Name": "N/A",
+                    "Entity Type": "Role",
+                    "Entity Name": role["name"],
+                    "Allow/Deny": "Allow",
+                    "Permission": perm_name,
+                    "Necessary?": necessary[0],
+                    "Notes": necessary[1],
+                })
 
-                for perm_type in ["allow", "deny"]:
-                    writer.writerows([
-                        [
-                            "Category" if channel["type"] == 4 else "Channel",
-                            channel["name"],
-                            "Role" if overwrite["type"] == 0 else "User",
-                            roles[overwrite["id"]]["name"] if overwrite["type"] == 0 else f"{user['username']}#{user['discriminator']}", # type: ignore
-                            perm_type.title(),
-                            perm_name
-                        ]
-                        for perm_name in translate_permissions_intstring(overwrite[perm_type])
-                        if overwrite[perm_type] != "0"
-                    ])
+        # The difference between role and user permissions is that for user permissions, you have to
+        # step back through their other roles to see if they have anything that conflicts with the channel.
+        # For role permissions, you don't have to do that - you just check the category and the role hierarchy.
+
+        # The difference between allows and denies (other than which permissions you're checking) is that
+        # you don't have to check the role hierarchy on denies, because roles can't be denied permissions globally.
+
+        for permission_type in ["role_allows", "role_denies", "user_allows", "user_denies"]:
+            for channel in channels.values():
+                everyone_denies = (
+                    channel["role_denies"][f1sc.EVERYONE_ROLE_ID]
+                    if f1sc.EVERYONE_ROLE_ID in channel["role_denies"]
+                    else set()
+                )
+
+                for entity_id, perm_names in channel[permission_type].items():
+                    for perm_name in perm_names:
+                        necessary = ("Yes", "") # Initially set this to "Yes", then try to find a reason to override this
+
+                        # If this is a role allow, does the role (or a parent) already have that permission?
+                        if permission_type == "role_allows":
+                            role = roles[entity_id]
+
+                            if perm_name in everyone_denies:
+                                necessary = ("Yes", "Needed to override channel's @everyone denial")
+                                for parent_role in role["parent_roles"]:
+                                    if (
+                                        parent_role["id"] in channel["role_allows"]
+                                        and perm_name in channel["role_allows"][parent_role["id"]]
+                                    ):
+                                        necessary = ("No", f"Already allowed by parent role {parent_role['name']}")
+                                        break
+
+                            else:
+                                if perm_name in role["permission_names"]:
+                                    necessary = ("No", "Already globally allowed for this role")
+                                else:
+                                    for parent_role in role["parent_roles"]:
+                                        if perm_name in parent_role["permission_names"]:
+                                            necessary = ("No", f"Already allowed by parent role {parent_role['name']}")
+                                            break
+
+                        # If this is a role deny, did the role even have those permissions in the first place?
+                        if permission_type == "role_denies":
+                            role = roles[entity_id]
+                            perms = copy.copy(everyone_role["permission_names"])
+                            for parent_role in role["parent_roles"]:
+                                perms |= parent_role["permission_names"]
+                            if perm_name not in perms:
+                                necessary = ("No", "Role never had this permission to begin with")
+
+                        # If this is a user allow, does the user already have the permission from a role?
+                        elif permission_type == "user_allows":
+                            user = users[entity_id]
+                            if perm_name in everyone_denies:
+                                necessary = ("Yes", "Needed to override channel's @everyone denial")
+                                for user_role in [roles[role_id] for role_id in user["roles"]]:
+                                    if (
+                                        user_role["id"] in channel["role_allows"]
+                                        and perm_name in channel["role_allows"][user_role["id"]]
+                                    ):
+                                        necessary = ("No", f"Already allowed by user's role {user_role['name']}")
+                                        break
+
+                            else:
+                                for user_role in [roles[role_id] for role_id in user["roles"]]:
+                                    if perm_name in user_role["permission_names"]:
+                                        necessary = ("No", f"Already allowed by user's role {user_role['name']}")
+                                        break
+
+                        # If this is a user deny, did the user even have those permissions in the first place?
+                        elif permission_type == "user_denies":
+                            user = users[entity_id]
+                            perms = copy.copy(everyone_role["permission_names"])
+
+                            for user_role in [roles[role_id] for role_id in user["roles"]]:
+                                perms |= user_role["permission_names"]
+
+                            for role_id, perm_names in channel["role_allows"].items():
+                                if role_id in user["roles"]:
+                                    perms |= perm_names
+                            for role_id, perm_names in channel["role_denies"].items():
+                                if role_id in user["roles"]:
+                                    perms -= perm_names
+                            # Don't need to check user allows because you can't set allowed and denied simultaneously
+                            # Don't need to check user denies because that's the perm we're currently looking at
+
+                            if perm_name not in perms:
+                                necessary = ("No", "User never had this permission to begin with")
+
+                        writer.writerow({
+                            "Channel Type": "Category" if channel["type"] == 4 else "Channel",
+                            "Channel Name": channel["name"],
+                            "Entity Type": "Role" if "role" in permission_type else "User",
+                            "Entity Name": (
+                                roles[entity_id]["name"]
+                                if "role" in permission_type
+                                else pprint_user_name(users[entity_id])
+                            ),
+                            "Allow/Deny": "Allow" if "allow" in permission_type else "Deny",
+                            "Permission": perm_name,
+                            "Necessary?": necessary[0],
+                            "Notes": necessary[1],
+                        })
 
 def export_reaction_users(
     connection: Connection,

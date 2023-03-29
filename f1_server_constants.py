@@ -57,6 +57,7 @@ BOT_USER_IDS = [
 ]
 
 # Roles
+EVERYONE_ROLE_ID = "177387572505346048"
 FAN_ROLE_ID = "328635502792278017"
 ROLE_HIERARCHY = {
     '177408413381165056': {"name": 'Admin', "rank": 1, "flag_score": 1.0},
@@ -72,23 +73,22 @@ BELOW_F4_STUB_ROLE = {"name": 'None', "rank": 99, "flag_score": 0.05}
 LEFT_SERVER_STUB_ROLE = {"name": 'Left', "rank": 999, "flag_score": 0}
 
 MOD_ROLE_HIERARCHY = {
-    "738665034359767060": {"name": "Mods", "parent": None},
+    "738665034359767060": {"name": "Mods", "parent": "177387572505346048"}, # Parented by @everyone
     "293845938764644352": {"name": "Marshals", "parent": "738665034359767060"},
     "177408501268611073": {"name": "Stewards", "parent": "293845938764644352"},
     "177408413381165056": {"name": "Admin", "parent": "177408501268611073"},
 }
 
 FX_ROLE_HIERARCHY = {
-    "313677111695245312": {"name": "F4", "parent": None},
+    "313677111695245312": {"name": "F4", "parent": "177387572505346048"}, # Parented by @everyone
     "314909797445271564": {"name": "F3", "parent": "313677111695245312"},
     "314910011358707712": {"name": "F2", "parent": "314909797445271564"},
     "314910132733739009": {"name": "F1", "parent": "314910011358707712"},
 }
 
 BOT_ROLE_HIERARCHY = {
-    "314149392154099723": {"name": "Race Control", "parent": None},
+    "314149392154099723": {"name": "Race Control", "parent": "177387572505346048"}, # Parented by @everyone
     "815645733335466055": {"name": "AltDentifier", "parent": "314149392154099723"},
-    "797806526814748703": {"name": "AutoChat", "parent": "314149392154099723"},
     "1019255486312366124": {"name": "CaptchaBot", "parent": "314149392154099723"},
     "186151513993904128": {"name": "DSL", "parent": "314149392154099723"},
     "358676319933956096": {"name": "F1Bot", "parent": "314149392154099723"},
@@ -101,6 +101,10 @@ BOT_ROLE_HIERARCHY = {
     "243747282036588544": {"name": "Ross Brawn", "parent": "314149392154099723"},
     "483289659036794890": {"name": "Shadow", "parent": "314149392154099723"},
     "631109204882751515": {"name": "Discord Server List", "parent": "314149392154099723"},
+    "1083434729405173803": {"name": "Polaris", "parent": "314149392154099723"},
+    "1038109794109759533": {"name": "BlueF1ag", "parent": "314149392154099723"},
+    "1036567163483459607": {"name": "TweetShift", "parent": "314149392154099723"},
+    "946750372461027332": {"name": "F1-Notifications", "parent": "314149392154099723"},
 }
 
 # Other
