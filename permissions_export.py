@@ -15,8 +15,14 @@ import f1_server_constants as f1sc
 
 ROLE_HIERARCHY = f1sc.MOD_ROLE_HIERARCHY | f1sc.FX_ROLE_HIERARCHY | f1sc.BOT_ROLE_HIERARCHY
 
+# These are permissions that are okay to see explicitly denied even when they're not technically necessary.
+# This is usually because some roles get these permissions, but it wouldn't be appropriate to add that
+# to the role hierarchy.
+ACCEPTABLE_DENIES = {"Add Reactions", "Attach Files", "Embed Links"}
+
 Snowflake = str
 PermName = str
+NecessaryTuple = tuple[Literal["Yes", "No", "Error"], str]
 
 class Role:
     """A Discord role."""
@@ -40,7 +46,7 @@ class Role:
     def __repr__(self) -> str:
         return (
             "<Role: "
-            f"role_id: {self.role_id}, name: {self.name}, position = {self.position} "
+            f"role_id: {self.role_id}, name: {self.name}, position = {self.position}, "
             f"permissions_intstring: {self.permissions_intstring}, permission_names: {self.permission_names}, "
             ">"
         )
@@ -108,6 +114,15 @@ class Channel:
         if role.role_id not in self.role_allows:
             return False
         if perm_name in self.role_allows[role.role_id]:
+            return True
+        return False
+
+    def is_role_perm_denied(self, role: Role, perm_name: PermName) -> bool:
+        """Returns a boolean indicating whether the provided Role is
+        explicitly denied the provided permission in this Channel."""
+        if role.role_id not in self.role_denies:
+            return False
+        if perm_name in self.role_denies[role.role_id]:
             return True
         return False
 
@@ -221,7 +236,7 @@ def process_channel_role_denies(
     for role_id, perm_names in sorted(channel.role_denies.items(), key = lambda x: roles[x[0]].position):
         role = roles[role_id]
         for perm_name in perm_names:
-            necessary = is_role_deny_necessary(role, perm_name)
+            necessary = is_role_deny_necessary(channel, role, perm_name)
             output_records.append({
                 "Channel Type": "Category" if channel.type == 4 else "Channel",
                 "Channel Name": channel.name,
@@ -291,11 +306,14 @@ def is_role_allow_necessary(
     channel: Channel,
     role: Role,
     perm_name: PermName,
-) -> tuple[Literal["Yes", "No"], str]:
+) -> NecessaryTuple:
     """Determine whether an individual allowance of a particular permission
     to a particular role in a particular channel is necessary or not."""
 
     necessary = ("Yes", "")
+
+    #if channel.channel_id == "360811693393182732" and  role.name == "Marshals":
+    #    breakpoint()
 
     # If the permission is denied to @everyone, then the new necessary status
     # is that yes, it's necessary because it's denied to everyone.
@@ -303,24 +321,46 @@ def is_role_allow_necessary(
     if perm_name in get_channel_everyone_denies(channel):
         necessary = ("Yes", "Needed to override channel's @everyone denial")
 
-    # If the permission is granted by any of the parent roles, it's not necessary.
+    else: # Only check this if it's not denied to @everyone in this channel
+        # If the permission is granted globally by any parent role, it's not necessary.
+        for parent_role in reversed(role.parent_roles):
+            if perm_name in parent_role.permission_names:
+                return ("No", f"Already globally allowed by parent role {parent_role.name}")
+
+    # If the permission is granted in this channel by any parent role, it's also not necessary.
+    # We can't do these checks in the same step, because we want notifications about global
+    # grants to supersede notifications about channel grants. (Trust me.)
     for parent_role in reversed(role.parent_roles):
-        if channel.is_role_perm_allowed(role, perm_name):
-            return ("No", f"Already allowed by parent role {parent_role.name}")
+        if channel.is_role_perm_allowed(parent_role, perm_name):
+            return ("No", f"Already allowed in this channel by parent role {parent_role.name}")
 
     return necessary
 
 def is_role_deny_necessary(
+    channel: Channel,
     role: Role,
     perm_name: PermName,
-) -> tuple[Literal["Yes", "No"], str]:
+) -> NecessaryTuple:
     """Determine whether an individual denial of a particular permission
     to a particular role in a particular channel is necessary or not."""
 
-    # Muted is a special case - this is okay even though it's not strictly necessary.
-    if role.name == "Muted" and perm_name in ["Add Reactions", "Embed Links"]:
+    # Some special-case permissions are automatically allowed.
+    # See the comment above ACCEPTABLE_DENIES.
+    if perm_name in ACCEPTABLE_DENIES:
         return ("Yes", "")
 
+    # If there are any parent roles (except @everyone) that GRANT the permission, this denial DOES NOT WORK.
+    # Discord doesn't know about role parentage, and "can" beats "can't", so the permission is granted.
+    for parent_role in [r for r in role.parent_roles if r.role_id != f1sc.EVERYONE_ROLE_ID]:
+        if channel.is_role_perm_allowed(parent_role, perm_name):
+            return ("Error", f"Blocked by explicit grant in this channel to parent role {parent_role.name}")
+
+    # We don't need to re-deny permissions that are already denied to a parent role.
+    for parent_role in reversed(role.parent_roles):
+        if channel.is_role_perm_denied(parent_role, perm_name):
+            return ("No", f"Already denied in this channel by parent role {parent_role.name}")
+
+    # If the role or its parents never had this permission to begin with, we don't need to deny it.
     if perm_name not in set().union(*[r.permission_names for r in [role] + role.parent_roles]):
         return ("No", "Role never had this permission to begin with")
 
@@ -331,7 +371,7 @@ def is_user_allow_necessary(
     user: dict,
     perm_name: PermName,
     roles: dict[Snowflake, Role],
-) -> tuple[Literal["Yes", "No"], str]:
+) -> NecessaryTuple:
     """Determine whether an individual allowance of a particular permission
     to a particular user in a particular channel is necessary or not."""
 
@@ -343,13 +383,18 @@ def is_user_allow_necessary(
     if perm_name in get_channel_everyone_denies(channel):
         necessary = ("Yes", "Needed to override channel's @everyone denial")
 
-    # If the permission is granted by any of the user's roles, it's not necessary.
-    for user_role in sorted(
-        [roles[role_id] for role_id in user["roles"]],
-        key = lambda r: r.position
-    ):
-        if channel.is_role_perm_allowed(user_role, perm_name):
-            return ("No", f"Already allowed by user's role {user_role.name}")
+    else: # Only check this if it's not denied to @everyone in this channel
+        # If the permission is granted globally by any parent role, it's not necessary.
+        for user_role in sorted([roles[role_id] for role_id in user["roles"]], key = lambda r: r.position):
+            if perm_name in user_role.permission_names: # Granted globally
+                return ("No", f"Already globally allowed by user's role {user_role.name}")
+
+    # If the permission is granted in this channel by any parent role, it's also not necessary.
+    # We can't do these checks in the same step, because we want notifications about global
+    # grants to supersede notifications about channel grants. (Trust me.)
+    for user_role in sorted([roles[role_id] for role_id in user["roles"]], key = lambda r: r.position):
+        if channel.is_role_perm_allowed(user_role, perm_name): # Or granted in this channel
+            return ("No", f"Already allowed in this channel by user's role {user_role.name}")
 
     return necessary
 
@@ -358,12 +403,12 @@ def is_user_deny_necessary(
     user: dict,
     perm_name: PermName,
     roles: dict[Snowflake, Role],
-) -> tuple[Literal["Yes", "No"], str]:
+) -> NecessaryTuple:
     """Determine whether an individual denial of a particular permission
     to a particular user in a particular channel is necessary or not."""
 
     # Build up the user's permission set, starting with permissions from @everyone
-    perms = copy.copy(roles[f1sc.EVERYONE_ROLE_ID].permission_names)
+    perms = copy.deepcopy(roles[f1sc.EVERYONE_ROLE_ID].permission_names)
 
     # Add in any permissions the user gets from the global permissions of their roles
     for user_role in [roles[role_id] for role_id in user["roles"]]:
