@@ -34,6 +34,17 @@ class Role:
         self.permissions_intstring = role_json["permissions"]
         self.permission_names = f1sa.translate_permissions_intstring(self.permissions_intstring)
 
+    def __str__(self) -> str:
+        return f"Role {self.name}"
+
+    def __repr__(self) -> str:
+        return (
+            "<Role: "
+            f"role_id: {self.role_id}, name: {self.name}, position = {self.position} "
+            f"permissions_intstring: {self.permissions_intstring}, permission_names: {self.permission_names}, "
+            ">"
+        )
+
 class Channel:
     """A Discord channel."""
     channel_id: Snowflake
@@ -78,6 +89,18 @@ class Channel:
             if po["type"] == 1
             and int(po["deny"]) != 0
         }
+
+    def __str__(self) -> str:
+        return f"Channel {self.name}"
+
+    def __repr__(self) -> str:
+        return (
+            "<Channel: "
+            f"channel_id: {self.channel_id}, name: {self.name}, position = {self.position}, type: {self.type}, "
+            f"parent_id: {self.parent_id}, role_allows: {self.role_allows}, role_denies: {self.role_denies}, "
+            f"user_allows: {self.user_allows}, user_denies: {self.user_denies}, "
+            ">"
+        )
 
     def is_role_perm_allowed(self, role: Role, perm_name: PermName) -> bool:
         """Returns a boolean indicating whether the provided Role is
@@ -384,3 +407,5 @@ def main():
             writer.writerows(process_channel_role_denies(channel, roles))
             writer.writerows(process_channel_user_allows(channel, roles, users))
             writer.writerows(process_channel_user_denies(channel, roles, users))
+
+main()
