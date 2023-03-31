@@ -321,7 +321,7 @@ def is_role_deny_necessary(
     if role.name == "Muted" and perm_name in ["Add Reactions", "Embed Links"]:
         return ("Yes", "")
 
-    if perm_name not in set().union(role.permission_names for role in [role] + role.parent_roles):
+    if perm_name not in set().union(*[r.permission_names for r in [role] + role.parent_roles]):
         return ("No", "Role never had this permission to begin with")
 
     return ("Yes", "")
