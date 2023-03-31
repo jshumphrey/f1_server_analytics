@@ -218,7 +218,7 @@ def process_channel_role_denies(
     ready to be passed off to the writer."""
 
     output_records = []
-    for role_id, perm_names in sorted(channel.role_allows.items(), key = lambda x: roles[x[0]].position):
+    for role_id, perm_names in sorted(channel.role_denies.items(), key = lambda x: roles[x[0]].position):
         role = roles[role_id]
         for perm_name in perm_names:
             necessary = is_role_deny_necessary(role, perm_name)
