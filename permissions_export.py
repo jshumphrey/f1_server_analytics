@@ -20,6 +20,41 @@ ROLE_HIERARCHY = f1sc.MOD_ROLE_HIERARCHY | f1sc.FX_ROLE_HIERARCHY | f1sc.BOT_ROL
 # to the role hierarchy.
 ACCEPTABLE_DENIES = {"Add Reactions", "Attach Files", "Embed Links"}
 
+# These are permissions entities that appear on channels in the API, but not in Discord's UI.
+# Adding them to this set allows them to be ignored.
+GHOST_PERMISSIONS = { # (Channel ID, User/Role ID)
+    ("1042140830158291045", "1042395617399414815"), # GT44#3560 in sports
+    ("829816960568655924", "713110394780123197"), # DanielRGolding#4152 in r/Formula1 Stage
+    ("825702140118564905", "808002254710898708"), # 𝙂𝙪𝙘𝙘𝙞 𝙘𝙤𝙛𝙛𝙞𝙣#0054 in f1-grandstand-read-pinned
+    ("1024053231246119053", "376222609525964811"), # FknParker999 예언#4645 in live voice
+    ("1024053231246119053", "218003903256592385"), # DatedRhyme#9463 in live voice
+    ("876046265111167016", "521898375726104579"), # ThatGuyAnderson#5404 in f1-general
+    ("431627942766968834", "459068609558347776"), # XXXRiley#8835 in f1tv-n-broadcast
+    ("314949863911587840", "808002254710898708"), # 𝙂𝙪𝙘𝙘𝙞 𝙘𝙤𝙛𝙛𝙞𝙣#0054 in paddock
+    ("436530724292526081", "422422296620302337"), # omegagamer737#1384 in f1-fantasy-official
+    ("998922729455636570", "733135516215804055"), # Matias 888#8668 in sim-racing-beta
+    ("998922729455636570", "215270136712527872"), # GODRAV#2364 in sim-racing-beta
+    ("998922729455636570", "437355269098438667"), # Arend#2562 in sim-racing-beta
+    ("998922729455636570", "298274436803723274"), # Lucas#9178 in sim-racing-beta
+    ("998922729455636570", "989069445433528400"), # anonymouhh#2298 in sim-racing-beta
+    ("998922729455636570", "856286790185123891"), # Memphis5050#4897 in sim-racing-beta
+    ("998922729455636570", "426860313888161794"), # hush#0848 in sim-racing-beta
+    ("959447281885671485", "830192967250608178"), # jensonvelcro#1172 in place_voting
+    ("959447281885671485", "188856766136713216"), # trom.bonne#2282 in place_voting
+    ("959447281885671485", "755277590570336326"), # Hamilton✪Forever#3056 in place_voting
+    ("959447281885671485", "448143136494190592"), # Drac#6798 in place_voting
+    ("959447281885671485", "232250374214516737"), # Das_Blinkenlights#0434 in place_voting
+    ("960856313615777794", "830192967250608178"), # jensonvelcro#1172 in place_hall-of-shame
+    ("960856313615777794", "448143136494190592"), # Drac#6798 in place_hall-of-shame
+    ("960856313615777794", "188856766136713216"), # trom.bonne#2282 in place_hall-of-shame
+    ("960856313615777794", "755277590570336326"), # Hamilton✪Forever#3056 in place_hall-of-shame
+    ("940631898835795998", "808002254710898708"), # 𝙂𝙪𝙘𝙘𝙞 𝙘𝙤𝙛𝙛𝙞𝙣#0054 in helper-interest
+    ("942836348635738182", "808002254710898708"), # 𝙂𝙪𝙘𝙘𝙞 𝙘𝙤𝙛𝙛𝙞𝙣#0054 in feedback-temp
+    ("687707105863663616", "408185351363100673"), # Severina#6247 in quarantine
+    ("687707105863663616", "422422296620302337"), # omegagamer737#1384 in quarantine
+    ("687707105863663616", "533346534549356555"), # andre_SC#7101 in quarantine
+}
+
 Snowflake = str
 PermName = str
 NecessaryTuple = tuple[Literal["Yes", "No", "Error"], str]
@@ -76,24 +111,28 @@ class Channel:
             for po in channel_json["permission_overwrites"]
             if po["type"] == 0
             and int(po["allow"]) != 0
+            and (self.channel_id, po["id"]) not in GHOST_PERMISSIONS
         }
         self.role_denies = {} if "permission_overwrites" not in channel_json else {
             po["id"]: f1sa.translate_permissions_intstring(po["deny"])
             for po in channel_json["permission_overwrites"]
             if po["type"] == 0
             and int(po["deny"]) != 0
+            and (self.channel_id, po["id"]) not in GHOST_PERMISSIONS
         }
         self.user_allows = {} if "permission_overwrites" not in channel_json else {
             po["id"]: f1sa.translate_permissions_intstring(po["allow"])
             for po in channel_json["permission_overwrites"]
             if po["type"] == 1
             and int(po["allow"]) != 0
+            and (self.channel_id, po["id"]) not in GHOST_PERMISSIONS
         }
         self.user_denies = {} if "permission_overwrites" not in channel_json else {
             po["id"]: f1sa.translate_permissions_intstring(po["deny"])
             for po in channel_json["permission_overwrites"]
             if po["type"] == 1
             and int(po["deny"]) != 0
+            and (self.channel_id, po["id"]) not in GHOST_PERMISSIONS
         }
 
     def __str__(self) -> str:
@@ -190,8 +229,10 @@ def process_roles(roles: dict[Snowflake, Role]) -> list[dict]:
             output_records.append({
                 "Channel Type": "Global",
                 "Channel Name": "N/A",
+                "Channel ID": "N/A",
                 "Entity Type": "Role",
                 "Entity Name": role.name,
+                "Entity ID": role.role_id,
                 "Allow/Deny": "Allow",
                 "Permission": perm_name,
                 "Necessary?": necessary[0],
@@ -215,8 +256,10 @@ def process_channel_role_allows(
             output_records.append({
                 "Channel Type": "Category" if channel.type == 4 else "Channel",
                 "Channel Name": channel.name,
+                "Channel ID": channel.channel_id,
                 "Entity Type": "Role",
                 "Entity Name": role.name,
+                "Entity ID": role.role_id,
                 "Allow/Deny": "Allow",
                 "Permission": perm_name,
                 "Necessary?": necessary[0],
@@ -240,8 +283,10 @@ def process_channel_role_denies(
             output_records.append({
                 "Channel Type": "Category" if channel.type == 4 else "Channel",
                 "Channel Name": channel.name,
+                "Channel ID": channel.channel_id,
                 "Entity Type": "Role",
                 "Entity Name": role.name,
+                "Entity ID": role.role_id,
                 "Allow/Deny": "Deny",
                 "Permission": perm_name,
                 "Necessary?": necessary[0],
@@ -266,8 +311,10 @@ def process_channel_user_allows(
             output_records.append({
                 "Channel Type": "Category" if channel.type == 4 else "Channel",
                 "Channel Name": channel.name,
+                "Channel ID": channel.channel_id,
                 "Entity Type": "User",
                 "Entity Name": f1sa.pprint_user_name(user),
+                "Entity ID": user_id,
                 "Allow/Deny": "Allow",
                 "Permission": perm_name,
                 "Necessary?": necessary[0],
@@ -292,8 +339,10 @@ def process_channel_user_denies(
             output_records.append({
                 "Channel Type": "Category" if channel.type == 4 else "Channel",
                 "Channel Name": channel.name,
+                "Channel ID": channel.channel_id,
                 "Entity Type": "User",
                 "Entity Name": f1sa.pprint_user_name(user),
+                "Entity ID": user_id,
                 "Allow/Deny": "Deny",
                 "Permission": perm_name,
                 "Necessary?": necessary[0],
@@ -322,8 +371,12 @@ def is_role_allow_necessary(
         necessary = ("Yes", "Needed to override channel's @everyone denial")
 
     else: # Only check this if it's not denied to @everyone in this channel
+        # If this role already has this permission globally, it doesn't need to be re-granted.
+        if perm_name in role.permission_names:
+            return ("No", "Already globally allowed for this role")
+
         # If the permission is granted globally by any parent role, it's not necessary.
-        for parent_role in reversed(role.parent_roles):
+        for parent_role in reversed([role] + role.parent_roles):
             if perm_name in parent_role.permission_names:
                 return ("No", f"Already globally allowed by parent role {parent_role.name}")
 
@@ -430,8 +483,8 @@ def is_user_deny_necessary(
         return ("No", "User never had this permission to begin with")
     return ("Yes", "")
 
-def main():
-    """Execute top-level functionality."""
+def export_permissions():
+    """Export all permission overwrites in the server, and assess whether they're necessary."""
 
     with f1sa.Connection(f1sa.TOKEN) as conn:
         roles = get_roles(conn)
@@ -440,8 +493,8 @@ def main():
 
     with open("permissions_export.csv", "w", encoding = "utf-8") as outfile:
         writer = csv.DictWriter(outfile, delimiter = ",", quotechar = '"', fieldnames = [
-            "Channel Type", "Channel Name", "Entity Type", "Entity Name",
-            "Allow/Deny", "Permission", "Necessary?", "Notes",
+            "Channel Type", "Channel Name", "Channel ID", "Entity Type", "Entity Name",
+            "Entity ID", "Allow/Deny", "Permission", "Necessary?", "Notes",
         ])
 
         writer.writeheader()
@@ -453,4 +506,34 @@ def main():
             writer.writerows(process_channel_user_allows(channel, roles, users))
             writer.writerows(process_channel_user_denies(channel, roles, users))
 
-main()
+def export_empty_permissions():
+    """Export all permission overwrites in the server that don't actually do anything."""
+    with f1sa.Connection(f1sa.TOKEN) as conn:
+        channels_json = conn.get_guild_channels(f1sc.F1_GUILD_ID)
+        roles_dict = {role["id"]: role for role in conn.get_roles(f1sc.F1_GUILD_ID)}
+
+        empty_permissions = []
+        for channel_json in channels_json:
+            if "permission_overwrites" in channel_json:
+                empty_permissions += [
+                    [channel_json["name"], roles_dict[po["id"]]["name"]]
+                    for po in channel_json["permission_overwrites"]
+                    if po["type"] == 0 # Role overwrites only
+                    and po["id"] != f1sc.EVERYONE_ROLE_ID
+                    and int(po["allow"]) == 0
+                    and int(po["deny"]) == 0
+                ]
+
+        if empty_permissions:
+            print(
+                f"Found {len(empty_permissions)} permission overwrites with no grants/denies. "
+                "See empty_permissions.csv for more information."
+            )
+            with open("empty_permissions.csv", "w", encoding = "utf-8") as outfile:
+                writer = csv.writer(outfile, delimiter = ",", quotechar = '"')
+                writer.writerow(["Channel Name", "Entity Name"])
+                writer.writerows(empty_permissions)
+
+
+export_permissions()
+export_empty_permissions()
