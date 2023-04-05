@@ -534,6 +534,5 @@ def export_empty_permissions():
                 writer.writerow(["Channel Name", "Entity Name"])
                 writer.writerows(empty_permissions)
 
-
 export_permissions()
 export_empty_permissions()
