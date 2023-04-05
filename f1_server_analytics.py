@@ -212,7 +212,7 @@ class Connection:
         return [
             message for message in all_messages
             if "reactions" in message
-            and any([reaction["emoji"]["name"] == emoji_text for reaction in message["reactions"]])
+            and any(reaction["emoji"]["name"] == emoji_text for reaction in message["reactions"])
         ]
 
     def get_audit_log_entries(
@@ -314,8 +314,7 @@ class Connection:
         except requests.HTTPError as ex:
             if ex.response.status_code == 404:
                 return None
-            else:
-                raise ex
+            raise ex
 
     def get_all_guild_members(self, guild_id: Snowflake, progress_bar: bool = True) -> list[dict]:
         '''This returns a list with the JSON of all members of the guild with the provided Guild ID.'''
@@ -425,9 +424,9 @@ def export_reaction_users(
                     member["user"]["username"] + "#" + member["user"]["discriminator"],
                     member["nick"] if member["nick"] else member["user"]["username"],
                     member["joined_at"][:10],
-                    min([role for role in member_roles if role in ["F1", "F2", "F3", "F4", "Fan"]]),
-                    any([role == "NoXP" for role in member_roles]),
-                    any([role.upper().startswith("BANISHED") for role in member_roles])
+                    min(role for role in member_roles if role in ["F1", "F2", "F3", "F4", "Fan"]),
+                    any(role == "NoXP" for role in member_roles),
+                    any(role.upper().startswith("BANISHED") for role in member_roles)
                 ])
 
 def get_joins_leaves(

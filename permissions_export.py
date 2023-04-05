@@ -104,7 +104,7 @@ class Channel:
         self.name = channel_json["name"]
         self.type = channel_json["type"]
         self.position = channel_json["position"]
-        self.parent_id = channel_json["parent_id"] if "parent_id" in channel_json else None
+        self.parent_id = channel_json.get("parent_id")
 
         self.role_allows = {} if "permission_overwrites" not in channel_json else {
             po["id"]: f1sa.translate_permissions_intstring(po["allow"])
