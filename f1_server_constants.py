@@ -152,7 +152,7 @@ PERMISSIONS_BIT_INDICES = {
     34: "Manage Threads and Forum Posts",
     35: "Create Public Threads in Channels",
     36: "Create Private Threads in Channels",
-    37: "Use External Stickers",
+    37: "Use External Stickers (if Nitro)",
     38: "Send Messages In Threads and Forum Posts",
     39: "Use Embedded Activities",
     40: "Timeout Members",
