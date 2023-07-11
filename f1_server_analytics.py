@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/python
 '''This provides a wrapper around the Discord HTTP API to help with some common kinds of requests.
 This is designed to be importable by another script that's more tailored to a particular use-case.'''
 

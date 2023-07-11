@@ -6,7 +6,8 @@ that is, whether the permission setting could be removed without impacting anyth
 
 # pylint: disable = invalid-name, too-few-public-methods, too-many-instance-attributes
 
-import csv, copy
+import csv
+import copy
 from tqdm import tqdm
 from typing import Literal, Optional
 
@@ -400,7 +401,7 @@ def is_role_deny_necessary(
     # Some special-case permissions are automatically allowed.
     # See the comment above ACCEPTABLE_DENIES.
     if perm_name in ACCEPTABLE_DENIES:
-        return ("Yes", "")
+        return ("Yes", "Special exception - this permission is always allowed to be denied")
 
     # If there are any parent roles (except @everyone) that GRANT the permission, this denial DOES NOT WORK.
     # Discord doesn't know about role parentage, and "can" beats "can't", so the permission is granted.
